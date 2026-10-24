@@ -6,6 +6,7 @@ const remoteManifestRepository = 'The-Veridis-Lion/Veridis-Rewrite';
 
 let updateState = null;
 let updateInFlight = false;
+let checkInFlight = false;
 
 function makeElement(tagName, className, text = '') {
     const element = document.createElement(tagName);
@@ -97,21 +98,26 @@ function projectUpdateSurfaces() {
     projectFeedbackUpdateWarning();
 }
 
+async function readRemoteJson(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+        const response = await fetch(url, { ...options, cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`Version request returned HTTP ${response.status}.`);
+        return await response.json();
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 async function readRemoteManifest() {
-    const response = await fetch(`https://raw.githubusercontent.com/${remoteManifestRepository}/main/manifest.json`, {
-        cache: 'no-store',
-    });
-    if (!response.ok) throw new Error(`Remote manifest request returned HTTP ${response.status}.`);
-    return await response.json();
+    return readRemoteJson(`https://raw.githubusercontent.com/${remoteManifestRepository}/main/manifest.json`);
 }
 
 async function readRemoteMainCommitSha() {
-    const response = await fetch(`https://api.github.com/repos/${remoteManifestRepository}/git/ref/heads/main`, {
+    const reference = await readRemoteJson(`https://api.github.com/repos/${remoteManifestRepository}/git/ref/heads/main`, {
         headers: { Accept: 'application/vnd.github+json' },
-        cache: 'no-store',
     });
-    if (!response.ok) throw new Error(`Remote main reference request returned HTTP ${response.status}.`);
-    const reference = await response.json();
     return reference.object?.sha;
 }
 
@@ -225,6 +231,33 @@ async function updateAndReload() {
     }
 }
 
-export function bindUpdateStatusEvents() {
+export function bindUpdateStatusEvents(checkForUpdates) {
+    const appendCheckButton = () => {
+        const content = document.getElementById('blai-tools-version-content');
+        if (!content || content.querySelector('[data-update-action="check"]')) return;
+        const button = makeElement('button', 'blai-tools-version-update-action', '检查版本');
+        button.type = 'button';
+        button.dataset.updateAction = 'check';
+        content.append(button);
+    };
+    projectToolsVersion('需要时点击检查版本。');
+    appendCheckButton();
+    $(document).off('click', '#blai-tools-version-section [data-update-action="check"]').on('click', '#blai-tools-version-section [data-update-action="check"]', async function () {
+        if (checkInFlight || updateInFlight || typeof checkForUpdates !== 'function') return;
+        checkInFlight = true;
+        this.disabled = true;
+        this.textContent = '正在检查…';
+        try {
+            await checkForUpdates();
+        } catch (error) {
+            logger.warn('[Veridis Update] Version check failed.', error);
+            projectToolsVersion('暂时无法确认版本状态。');
+        } finally {
+            checkInFlight = false;
+            this.disabled = false;
+            this.textContent = '检查版本';
+            appendCheckButton();
+        }
+    });
     $(document).off('click', '#blai-tools-version-section [data-update-action="update"]').on('click', '#blai-tools-version-section [data-update-action="update"]', updateAndReload);
 }
