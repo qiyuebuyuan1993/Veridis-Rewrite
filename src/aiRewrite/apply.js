@@ -10,9 +10,11 @@ import { beginAtomicMessageDisplaySwap } from '../dom/message.js';
 import { markHostChatDirtyFromIndex } from '../integrations/tauriTavern.js';
 import { collectXmlCommentRanges } from './commentProtection.js';
 import { getOccurrenceProgramFallbackText, resolveRewriteTrackedRanges } from './matching.js';
-import { getTaskFreshnessIssue } from './task.js';
+import { getTaskFreshnessIssue, resolveManualProgramTail } from './task.js';
 import { recordAiRewriteDebug } from './debug.js';
 import { generationLifecycle } from '../host/generationLifecycle.js';
+import { trimCopiedBoundaryDialogue } from './boundaryDialogue.js';
+import { trimAddedNarrationCopies } from './narrationCopies.js';
 
 // Owns Original-based AI/fallback composition, the final normal Program pass,
 // manual tail preservation, and the atomic message/Swipe + branch-provenance commit.
@@ -135,22 +137,18 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (task.automatic !== true && !messageStagesEqual(previous, task.claimedMeta || null)) {
         return { appliedCount: 0, reason: 'message-stage-changed' };
     }
-    // Automatic composition reads live text; manual composition uses retained Original.
+    // Edited manual sources are frozen at request creation; history changes only on commit.
     const originalText = task.automatic === true ? currentText : task.originalText;
-    let preservedTail = '';
-    let trimProgramEnd = false;
-    if (task.automatic !== true && previous) {
-        // MVU appends to trimEnd() + two newlines; retain that separator even
-        // when the old stage's trailing newlines also form an exact prefix.
-        const trimmedProgram = previous.programMes.trimEnd();
-        trimProgramEnd = currentText !== previous.programMes
-            && currentText.startsWith(trimmedProgram + '\n\n');
-        const previousPrefix = trimProgramEnd ? trimmedProgram : previous.programMes;
-        if (!currentText.startsWith(previousPrefix)) {
-            return { appliedCount: 0, reason: 'message-program-stage-changed' };
-        }
-        preservedTail = currentText.slice(previousPrefix.length);
+    const rebaseFromCurrentText = task.automatic !== true && task.rebaseFromCurrentText === true;
+    if (rebaseFromCurrentText && (originalText !== currentText || task.claimedMessageText !== currentText)) {
+        return { appliedCount: 0, reason: 'manual-source-changed' };
     }
+    const tailState = task.automatic !== true && !rebaseFromCurrentText
+        ? resolveManualProgramTail(currentText, previous)
+        : { tail: '', trimProgramEnd: false };
+    if (!tailState) return { appliedCount: 0, reason: 'message-program-stage-changed' };
+    const preservedTail = tailState.tail;
+    const trimProgramEnd = tailState.trimProgramEnd;
     const selectedItems = mode === 'ai'
         ? task.items.filter((item) => selectedReplacements.has(item.id))
         : task.items;
@@ -171,7 +169,17 @@ function applyRewritePlan(task, selectedReplacements, mode) {
                 ),
             strategy: mode === 'ai' ? 'sentence' : 'raw-occurrence-fallback',
         }));
-    const composition = applyResolvedReplacements(originalText, replacements);
+    const dialogueGuard = mode === 'ai' ? trimCopiedBoundaryDialogue(originalText, replacements)
+        : { replacements, removedCount: 0 };
+    if (dialogueGuard.removedCount) recordAiRewriteDebug('boundary-dialogue-trimmed', {
+        generationId: task.generationId || '', index: task.index, removedCount: dialogueGuard.removedCount,
+    });
+    const guarded = mode === 'ai' ? trimAddedNarrationCopies(originalText, dialogueGuard.replacements)
+        : dialogueGuard;
+    if (guarded.removedCount && mode === 'ai') recordAiRewriteDebug('added-narration-copy-trimmed', {
+        generationId: task.generationId || '', index: task.index, removedCount: guarded.removedCount,
+    });
+    const composition = applyResolvedReplacements(originalText, guarded.replacements);
     // Run only normal Program rules on the composition, never temporary streaming replacements.
     const programText = applyScopedCompiledReplacements(
         composition.text,
@@ -215,7 +223,7 @@ function applyRewritePlan(task, selectedReplacements, mode) {
         generationId: task.generationId || '',
         index: task.index,
         appliedCount: selectedItems.length,
-        strategies: replacements.map((replacement) => replacement.strategy),
+        strategies: guarded.replacements.map((replacement) => replacement.strategy),
         beforeLength: currentText.length,
         afterLength: finalText.length,
     });

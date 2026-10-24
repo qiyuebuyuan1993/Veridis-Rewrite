@@ -7,6 +7,7 @@ export function snapshotAiCommunicationRequest(requestConfig) {
     const credentialOwner = requestConfig.custom_api;
     return JSON.stringify(requestConfig, function(property, value) {
         if (this === credentialOwner && property === 'key') return redactedCredentialValue;
+        if (property === 'custom_include_headers') return redactedCredentialValue;
         return value;
     }, 2);
 }
@@ -19,18 +20,19 @@ function appendAiCommunicationRecord(record) {
     if (isAiCommunicationMonitorMounted()) renderAiCommunicationMonitor();
 }
 
-export function recordAiCommunicationSuccess({ startedAt, endedAt, requestJson, response }) {
+export function recordAiCommunicationSuccess({ startedAt, endedAt, requestJson, response, endpoint = 'TavernHelper.generateRaw' }) {
     appendAiCommunicationRecord({
         timestamp: new Date(startedAt).toISOString(),
         status: 'succeeded',
         durationMs: endedAt - startedAt,
         tokenUsage: 'unavailable',
         requestJson,
+        endpoint,
         response,
     });
 }
 
-export function recordAiCommunicationFailure({ startedAt, endedAt, requestJson, error }) {
+export function recordAiCommunicationFailure({ startedAt, endedAt, requestJson, error, endpoint = 'TavernHelper.generateRaw' }) {
     const errorInfo = {
         name: error?.name,
         message: error?.message,
@@ -43,6 +45,7 @@ export function recordAiCommunicationFailure({ startedAt, endedAt, requestJson, 
         durationMs: endedAt - startedAt,
         tokenUsage: 'unavailable',
         requestJson,
+        endpoint,
         error: errorInfo,
     });
 }
@@ -60,15 +63,15 @@ export function formatAiCommunicationRecords() {
             `耗时: ${record.durationMs} ms`,
             '令牌用量: 不可用',
             '',
-            '请求 — Veridis → TavernHelper.generateRaw',
+            `请求 — Veridis → ${record.endpoint}`,
             record.requestJson,
             '',
         ];
         if (record.status === 'succeeded') {
-            lines.push('返回 — TavernHelper.generateRaw → Veridis', record.response);
+            lines.push(`返回 — ${record.endpoint} → Veridis`, record.response);
         } else {
             lines.push(
-                '错误 — TavernHelper.generateRaw → Veridis',
+                `错误 — ${record.endpoint} → Veridis`,
                 `名称: ${record.error.name ?? '不可用'}`,
                 `消息: ${record.error.message ?? '不可用'}`,
             );

@@ -8,7 +8,7 @@ import { getMessageDiffMeta, isMessageDiffReverted } from '../diff/messageMeta.j
 import { getMessageDiffBranchKey } from '../chat/messageBranch.js';
 import { getCurrentChatIdentity } from '../host/context.js';
 import { generationLifecycle } from '../host/generationLifecycle.js';
-import { AiRewriteRequestFormatError, isAiRewriteRequestFormatError, isBadRequestError, requestAiRewrite } from './generation.js';
+import { AiRewriteRequestFormatError, isAiRewriteRequestFormatError, isBadRequestError, requestAiRewrite, getAiRewriteTransport } from './generation.js';
 import { recordAiRewriteDebug } from './debug.js';
 import {
     getAiSettings,
@@ -20,6 +20,7 @@ import {
     getTaskFreshnessIssue,
     isTaskStillFresh,
     snapshotAiRewriteTaskSettings,
+    resolveManualProgramTail,
     validateAutomaticAiRewriteContent,
 } from './task.js';
 import { applyAcceptedRewrites, applyProgramFallbackRewrites } from './apply.js';
@@ -713,13 +714,28 @@ function buildAiRewriteCandidate(payload, options = {}) {
     const currentText = typeof msg.mes === 'string' ? msg.mes : '';
     const branchKey = getMessageDiffBranchKey(msg);
     const previous = getMessageDiffMeta(msg, branchKey);
+    const rebaseFromCurrentText = !isAutomatic && previous !== null
+        && resolveManualProgramTail(currentText, previous) === null;
     const frozenSnapshot = isAutomatic && payload && typeof payload === 'object' && typeof payload.snapshotText === 'string'
         ? payload.snapshotText
         : '';
     const sourceText = isAutomatic
         ? (frozenSnapshot || currentText)
-        : (previous?.originalMes ?? currentText);
-    if (!sourceText.trim()) return { task: null, reason: '目标消息为空' };
+        : (rebaseFromCurrentText ? currentText : (previous?.originalMes ?? currentText));
+    if (!sourceText.trim()) {
+        recordAiRewriteDebug('task-source-empty', {
+            index,
+            branchKey,
+            manual: !isAutomatic,
+            messageTextType: typeof msg.mes,
+            currentTextLength: currentText.length,
+            currentHasText: currentText.trim().length > 0,
+            retainedOriginalLength: previous?.originalMes.length ?? null,
+            retainedProgramLength: previous?.programMes.length ?? null,
+            rebaseFromCurrentText,
+        }, 'warn');
+        return { task: null, reason: '目标消息为空' };
+    }
 
     const taskSettings = snapshotAiRewriteTaskSettings(settings, aiSettings);
     const { wholeMessage, tagName } = getAiXmlScopeTag(taskSettings.aiSettings);
@@ -761,7 +777,7 @@ function buildAiRewriteCandidate(payload, options = {}) {
             sentenceTargetCount: originalItems.length,
             itemLengths: originalItems.map((item) => item.text.length),
             isStreaming: streamingRuntimeState.isStreamingGeneration === true,
-            source: !isAutomatic && previous ? 'retained-original' : 'host-original',
+            source: rebaseFromCurrentText ? 'edited-current' : (!isAutomatic && previous ? 'retained-original' : 'host-original'),
             rawSourceLength: currentText.length,
             sourceLength: sourceText.length,
             generationId: isAutomatic ? String(payload.generationId || '') : '',
@@ -783,6 +799,7 @@ function buildAiRewriteCandidate(payload, options = {}) {
             matchedAiRuleCount: countMatchedAiRules(matches),
             claimedMessageText: currentText,
             claimedMeta: previous,
+            rebaseFromCurrentText,
             automatic: isAutomatic,
             generationId: isAutomatic ? String(payload.generationId || '') : '',
             chatId: isAutomatic ? String(payload.chatId || '') : '',
@@ -1098,7 +1115,7 @@ async function runAiRewriteForMessage(payload, options = {}) {
         rawAiMatchCount: readyTask.rawAiMatchCount,
         matchedAiRuleCount: readyTask.matchedAiRuleCount,
         model: aiSettings.model,
-        transport: 'tavern-helper-custom-api',
+        transport: getAiRewriteTransport(),
         maxRetries: getAiRetryCount(aiSettings),
         isStreaming: streamingRuntimeState.isStreamingGeneration === true,
         waitForFinalCleanse,

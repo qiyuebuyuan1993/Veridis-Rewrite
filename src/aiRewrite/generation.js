@@ -1,8 +1,14 @@
-/** Owns TavernHelper config and single-request transport, abort-to-provider stop, and request errors; runtime owns orchestration, timeouts, retries, and task cancellation. */
+/** Owns rewrite request config, transport selection, cancellation, and request errors; runtime owns orchestration and retries. */
 import { normalizeAiSamplingSettings } from '../settings/defaults.js';
 import { logger } from '../log.js';
 import { recordAiRewriteDebug } from './debug.js';
 import { recordAiCommunicationFailure, recordAiCommunicationSuccess, snapshotAiCommunicationRequest } from './communicationMonitor.js';
+import { aiRewriteProxyEndpoint, buildAiRewriteProxyBody, hasRuleRouter, requestAiRewriteViaProxy } from './isolatedRequest.js';
+import { parseAiRequestOptions } from './requestOptions.js';
+
+export function getAiRewriteTransport() {
+    return hasRuleRouter() ? 'sillytavern-chat-completions-proxy' : 'tavern-helper-custom-api';
+}
 
 export function buildAiRewriteGenerateRawConfig(prompt, aiSettings = {}, generationId = '') {
     const sampling = normalizeAiSamplingSettings(aiSettings);
@@ -24,11 +30,15 @@ export function buildAiRewriteGenerateRawConfig(prompt, aiSettings = {}, generat
     };
 
     if (sampling.repetitionPenalty !== 1) customIncludeBody.repetition_penalty = sampling.repetitionPenalty;
+    const { additional, excluded } = parseAiRequestOptions(aiSettings);
+    Object.assign(customIncludeBody, additional);
+    for (const field of excluded) delete customIncludeBody[field];
+    if (excluded.length) customApi.custom_exclude_body = excluded;
 
     return {
         generation_id: String(generationId || ''),
         ordered_prompts: [{ role: 'user', content: String(prompt ?? '') }],
-        should_stream: false,
+        should_stream: aiSettings.streamingEnabled === true,
         custom_api: customApi,
     };
 }
@@ -45,7 +55,11 @@ export function getTavernHelperGenerationApi() {
     return null;
 }
 
-export async function callTavernHelperGenerateRaw(requestConfig) {
+export async function callTavernHelperGenerateRaw(requestConfig, signal, transport = getAiRewriteTransport()) {
+    signal?.throwIfAborted();
+    if (transport === 'sillytavern-chat-completions-proxy') {
+        return requestAiRewriteViaProxy(requestConfig, signal);
+    }
     const tavernHelper = getTavernHelperGenerationApi();
     if (!tavernHelper) throw new Error('TavernHelper.generateRaw 不可用');
     return tavernHelper.generateRaw(requestConfig);
@@ -71,8 +85,11 @@ export function isBadRequestError(error) {
 }
 
 export async function requestAiRewrite(prompt, aiSettings, signal, task = null) {
+    const transport = getAiRewriteTransport();
+    const isolated = transport === 'sillytavern-chat-completions-proxy';
+    const endpoint = isolated ? aiRewriteProxyEndpoint : 'TavernHelper.generateRaw';
     const tavernHelper = getTavernHelperGenerationApi();
-    if (!tavernHelper) throw new Error('TavernHelper.generateRaw 不可用');
+    if (!isolated && !tavernHelper) throw new Error('TavernHelper.generateRaw 不可用');
     const requestStartedAt = Date.now();
     const helperGenerationId = task?.automatic === true
         ? `veridis-ai-rewrite-${task.generationId}-${requestStartedAt}`
@@ -81,7 +98,8 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
     const sampling = normalizeAiSamplingSettings(aiSettings);
     const startedAt = requestStartedAt;
     recordAiRewriteDebug('fetch-start', {
-        endpoint: 'TavernHelper.generateRaw',
+        endpoint,
+        transport,
         helperGenerationId,
         model: aiSettings.model,
         apiSource: 'custom',
@@ -103,6 +121,7 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
         source: task?.scheduleSource || '',
     });
     const stopGeneration = () => {
+        if (isolated) return; // The proxy request uses this request's AbortSignal directly.
         try {
             tavernHelper.stopGenerationById?.(helperGenerationId);
         } catch (error) {
@@ -111,16 +130,17 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
     };
     signal?.addEventListener?.('abort', stopGeneration, { once: true });
     try {
-        const requestJson = snapshotAiCommunicationRequest(requestConfig);
+        const requestJson = snapshotAiCommunicationRequest(isolated ? buildAiRewriteProxyBody(requestConfig) : requestConfig);
         const communicationStartedAt = Date.now();
         let response;
         try {
-            response = await callTavernHelperGenerateRaw(requestConfig);
+            response = await callTavernHelperGenerateRaw(requestConfig, signal, transport);
         } catch (error) {
             recordAiCommunicationFailure({
                 startedAt: communicationStartedAt,
                 endedAt: Date.now(),
                 requestJson,
+                endpoint,
                 error,
             });
             throw error;
@@ -129,6 +149,7 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
             startedAt: communicationStartedAt,
             endedAt: Date.now(),
             requestJson,
+            endpoint,
             response,
         });
         if (signal?.aborted) {
@@ -139,7 +160,8 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
         const content = typeof response === 'string' ? response : String(response ?? '');
         if (!content) throw new Error('酒馆助手自定义 API 返回空响应');
         recordAiRewriteDebug('fetch-response', {
-            endpoint: 'TavernHelper.generateRaw',
+            endpoint,
+            transport,
             ok: true,
             elapsedMs: Date.now() - startedAt,
             responseLength: content.length,
@@ -149,7 +171,7 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
         });
         recordAiRewriteDebug('response-content', {
             contentLength: content.length,
-            transport: 'tavern-helper-custom-api',
+            transport,
         });
         return content;
     } finally {
