@@ -98,6 +98,11 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
     const requestConfig = buildAiRewriteGenerateRawConfig(prompt, aiSettings, helperGenerationId);
     const sampling = normalizeAiSamplingSettings(aiSettings);
     const startedAt = requestStartedAt;
+    const communicationContext = task ? {
+        generationId: task.generationId || '',
+        chatId: task.chatId || '',
+        startedAtMs: task.startedAtMs,
+    } : undefined;
     recordAiRewriteDebug('fetch-start', {
         endpoint,
         transport,
@@ -138,6 +143,7 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
             response = await callTavernHelperGenerateRaw(requestConfig, signal, transport);
         } catch (error) {
             recordAiCommunicationFailure({
+                context: communicationContext,
                 startedAt: communicationStartedAt,
                 endedAt: Date.now(),
                 requestJson,
@@ -147,6 +153,7 @@ export async function requestAiRewrite(prompt, aiSettings, signal, task = null) 
             throw error;
         }
         recordAiCommunicationSuccess({
+            context: communicationContext,
             startedAt: communicationStartedAt,
             endedAt: Date.now(),
             requestJson,

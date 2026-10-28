@@ -33,6 +33,33 @@ function trimAppendedContrast(source, replacement, replacements, original, rewri
     return kept + original.slice(-1);
 }
 
+function trimAppendedFollowingClauses(source, replacement, replacements, original, rewritten) {
+    if (sentences(rewritten).length !== 1 || protectedRanges(rewritten).length) return rewritten;
+    const following = source.slice(replacement.end, replacement.end + 1000);
+    const match = following.match(/^\s*([^。！？!?<>`\r\n]+)[。！？!?]/u);
+    if (!match || protectedRanges(match[0]).length) return rewritten;
+    if (replacements.some(other => other !== replacement && other.start < replacement.end + match[0].length
+        && other.end > replacement.end && String(other.rewritten ?? '') !== source.slice(other.start, other.end))) return rewritten;
+    // Match whole leading clauses, not arbitrary substrings or semantic similarity.
+    // The adjacent subject may be omitted when the model joins it with a comma.
+    const clauses = match[1].split(/[，,]/u);
+    for (let count = 2; count <= clauses.length; count++) {
+        const anchor = clauses.slice(0, count).join('，');
+        for (const copied of [anchor, anchor.replace(/^[他她它]/u, '')]) {
+            const key = view(copied);
+            if (key.length < 16 || sharesRun(key, view(original), 6)) continue;
+            for (const comma of rewritten.matchAll(/[，,]/gu)) {
+                const kept = rewritten.slice(0, comma.index);
+                const tail = rewritten.slice(comma.index + 1);
+                if (view(tail) !== key || !sharesRun(view(kept), view(original), 8)) continue;
+                // No source ranges are removed: the original neighboring sentence stays intact.
+                return kept + original.slice(-1);
+            }
+        }
+    }
+    return rewritten;
+}
+
 export function trimAdjacentContinuation(source, replacement, replacements) {
     const original = source.slice(replacement.start, replacement.end).trim();
     const rewritten = String(replacement.rewritten ?? '');
@@ -40,6 +67,8 @@ export function trimAdjacentContinuation(source, replacement, replacements) {
         || sentences(original).length !== 1 || protectedRanges(original).length || repeated.test(original.replace(/不再/gu, ''))) return rewritten;
     const contrast = trimAppendedContrast(source, replacement, replacements, original, rewritten);
     if (contrast !== rewritten) return contrast;
+    const clauses = trimAppendedFollowingClauses(source, replacement, replacements, original, rewritten);
+    if (clauses !== rewritten) return clauses;
     const spans = sentences(rewritten);
     if (spans.length < 2) return rewritten;
     const split = spans[0].end;
