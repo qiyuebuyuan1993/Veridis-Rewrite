@@ -14,7 +14,7 @@
     --blai-diff-source-manual-background: color-mix(in srgb, var(--blai-diff-source-manual-color) 16%, transparent);
     position: fixed !important;
     inset: 0 !important;
-    z-index: 10000000 !important;
+    z-index: 2147483604 !important;
     background: color-mix(in srgb, var(--bg-base) 58%, transparent) !important;
     display: none;
     align-items: center;
@@ -221,7 +221,7 @@
 }
 
 #blai-diff-related-modal {
-    z-index: 10000004 !important;
+    z-index: 2147483605 !important;
 }
 
 .blai-diff-related-card {
@@ -425,7 +425,7 @@
     padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)) !important;
     margin: 0 !important;
     box-sizing: border-box !important;
-    z-index: 10000005 !important;
+    z-index: 2147483606 !important;
 }}
 
 @media screen and (max-width: 600px) {#blai-diff-related-modal > .blai-diff-related-card, .blai-diff-modal-card {

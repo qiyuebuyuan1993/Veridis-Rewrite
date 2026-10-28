@@ -437,7 +437,7 @@
     border-radius: 10px !important;
     background: var(--bg-surface) !important;
     box-shadow: 0 14px 32px color-mix(in srgb, var(--bg-base) 22%, transparent) !important;
-    z-index: 10000007 !important;
+    z-index: 2147483608 !important;
 }
 
 .blai-bind-menu[hidden] {
@@ -581,7 +581,7 @@
     height: 100dvh !important;
     padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)) !important;
     box-sizing: border-box !important;
-    z-index: 10000000 !important;
+    z-index: 2147483604 !important;
     flex-direction: column !important;
     font-family: inherit !important;
     align-items: center !important;

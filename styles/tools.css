@@ -80,7 +80,7 @@
     height: 100vh !important;
     height: 100dvh !important;
     background: color-mix(in srgb, var(--bg-base) 12%, transparent) !important;
-    z-index: 9999999 !important;
+    z-index: 2147483603 !important;
     display: flex !important;
     justify-content: center !important;
     align-items: center !important;

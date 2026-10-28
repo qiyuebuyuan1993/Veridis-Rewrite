@@ -27,11 +27,11 @@
 }
 
 #blai-rule-edit-modal {
-    z-index: 10000005 !important;
+    z-index: 2147483606 !important;
 }
 
 #blai-subrule-edit-modal {
-    z-index: 10000006 !important;
+    z-index: 2147483607 !important;
 }
 
 .blai-edit-modal-card {
@@ -342,7 +342,7 @@
     position: fixed !important;
     inset: 0 !important;
     background: color-mix(in srgb, var(--bg-base) 12%, transparent) !important;
-    z-index: 10000000 !important;
+    z-index: 2147483604 !important;
     display: none;
     align-items: center !important;
     justify-content: center !important;
@@ -405,7 +405,7 @@
     padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)) !important;
     box-sizing: border-box !important;
     pointer-events: auto !important;
-    z-index: 10000008 !important;
+    z-index: 2147483609 !important;
 }
 
 #blai-preset-import-choice-modal.blai-is-open {
@@ -458,7 +458,7 @@
 }
 
 #blai-rule-search-modal {
-    z-index: 10000004 !important;
+    z-index: 2147483605 !important;
 }
 
 .blai-rule-search-card {
@@ -908,7 +908,7 @@
     padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)) !important;
     margin: 0 !important;
     box-sizing: border-box !important;
-    z-index: 10000005 !important;
+    z-index: 2147483606 !important;
 }}
 
 @media screen and (max-width: 600px) {#blai-rule-edit-modal > .blai-edit-modal-card, #blai-preset-import-choice-modal > .blai-import-choice-card, #blai-rule-search-modal > .blai-rule-search-card, #blai-subrule-edit-modal > .blai-edit-modal-card {

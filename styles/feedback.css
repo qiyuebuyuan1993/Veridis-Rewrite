@@ -3,7 +3,7 @@
 #blai-feedback-workspace {
     position: fixed;
     inset: 0;
-    z-index: 1000002;
+    z-index: 2147483602;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
@@ -619,3 +619,16 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+/* Separate entire rewrite records, not their individual diagnostic events. */
+#blai-feedback-workspace .blai-log-record {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 2px solid var(--border-color);
+    min-width: 0;
+}
+#blai-feedback-workspace .blai-log-record .blai-feedback-local-heading strong {
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+#blai-feedback-workspace .blai-log-record button { flex-shrink: 0; }

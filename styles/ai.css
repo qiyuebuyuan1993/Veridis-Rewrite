@@ -108,7 +108,7 @@ body #toast-container > .blai-ai-rewrite-toast.blai-ai-rewrite-progress-toast > 
 }
 
 #blai-ai-prompt-modal {
-    z-index: 10000006 !important;
+    z-index: 2147483607 !important;
     padding: 0 !important;
     justify-content: stretch !important;
     align-items: stretch !important;
