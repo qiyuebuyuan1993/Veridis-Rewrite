@@ -65,3 +65,8 @@ TauriTavern 路由契约测试另行运行 `npm run test:tauri`。设置 `VERIDI
 - `tauri240-generation-lifecycle.js`：[generation-lifecycle-service.js](https://github.com/Darkatse/TauriTavern/blob/fff9af0333be97697be2313981699ab0ce35c236/src/tauri/main/services/ai/generation-lifecycle-service.js)
 
 该测试运行固定版本的真实路由与生命周期源码，原生桥接及模型响应由测试替身提供，不代表真实 Tauri 应用或 Android 设备实测。第三方源码不随本仓库重新分发。
+
+
+### 修复23–26日志检查
+
+`npm test` 包含 `communication-storage.mjs`：刷新等价加载、清空、10条上限、空间不足、损坏数据及既有密钥脱敏。`npm run test:log-ui` 使用与 `test:ui` 相同的 Playwright 环境变量，验证真实页面刷新及每组复制；输出为隔离浏览器测试结果，不代表真机。最新发布代码/集成检查总数为267；完整平台复现范围见 `docs/compatibility-verification.md`。

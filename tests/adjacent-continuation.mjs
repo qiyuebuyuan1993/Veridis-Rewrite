@@ -106,3 +106,32 @@ test('same textual shape with unrelated neutral names and objects', () => {
         added: '管理员打开了朝向院子的木门，把旧报纸搬进走廊尽头空着的储物室。' };
     assert.equal(run(c).value, c.kept);
 });
+
+
+test('comma-joined leading clauses copied from the next sentence are removed without touching source',()=>{
+    const target='他站在书架旁，神情专注而庄重，仿佛在进行一项最重要的仪式。';
+    const next='他为你整理散落的书籍，动作轻柔得不可思议，生怕弄坏那些旧书。';
+    const rewritten='他站在书架旁，神情专注，为你整理散落的书籍，动作轻柔得不可思议。';
+    const source=target+next;
+    const make=value=>({start:0,end:target.length,rewritten:value});
+    const result=trimAddedNarrationCopies(source,[make(rewritten)]);
+    assert.equal(result.replacements[0].rewritten,'他站在书架旁，神情专注。');
+    assert.equal(source.slice(target.length),next);
+    assert.equal(trimAddedNarrationCopies(source,result.replacements).removedCount,0);
+    for(const changed of [rewritten.replace('整理','丢弃'),rewritten.replace('轻柔','粗暴'),rewritten.replace('为你','又为你')]) {
+        assert.equal(trimAddedNarrationCopies(source,[make(changed)]).replacements[0].rewritten,changed);
+    }
+    const neighbor={start:target.length,end:source.length,rewritten:'他没有整理书籍。'};
+    assert.equal(trimAddedNarrationCopies(source,[make(rewritten),neighbor]).replacements[0].rewritten,rewritten);
+});
+
+test('comma copy guard preserves negative clauses, original facts and intentional repeats',()=>{
+    const next='他为你整理散落的书籍，动作轻柔得不可思议，生怕弄坏那些旧书。';
+    for(const target of ['他又站在书架旁，神情专注，为你整理散落的书籍。', '他站在书架旁，为你整理散落的书籍，动作轻柔。']) {
+        const rewritten='他站在书架旁，神情专注，为你整理散落的书籍，动作轻柔得不可思议。';
+        assert.equal(trimAddedNarrationCopies(target+next,[{start:0,end:target.length,rewritten}]).replacements[0].rewritten,rewritten);
+    }
+    const target='他站在书架旁，并没有打开那只纸箱。';
+    const rewritten='他站在书架旁，并没有打开那只纸箱，为你整理散落的书籍，动作轻柔得不可思议。';
+    assert.equal(trimAddedNarrationCopies(target+next,[{start:0,end:target.length,rewritten}]).replacements[0].rewritten,target);
+});
