@@ -10,6 +10,7 @@ import { getCurrentChatIdentity } from '../host/context.js';
 import { generationLifecycle } from '../host/generationLifecycle.js';
 import { AiRewriteRequestFormatError, isAiRewriteRequestFormatError, isBadRequestError, requestAiRewrite, getAiRewriteTransport } from './generation.js';
 import { recordAiRewriteDebug } from './debug.js';
+import { getBoundaryRepairItems, repairBoundaryCopies } from './boundaryRepair.js';
 import {
     getAiSettings,
     getAiConfigIssue,
@@ -398,6 +399,10 @@ function finishAiRewriteApply(task, accepted) {
 
     const applyResult = applyAcceptedRewrites(task, accepted);
     const appliedCount = applyResult.appliedCount || 0;
+    if (applyResult.rejectedCount > 0) {
+        notifyAiRewriteStatus('warning', '部分目标未完成清理', `已应用 ${appliedCount} 项；${applyResult.rejectedCount} 项仍有回抄风险，保留原文。`, { timeOut: 8000 });
+        return { status: 'partial', applyResult };
+    }
     if (appliedCount > 0) {
         recordAiRewriteDebug('run-success', {
             generationId: task.generationId || '',
@@ -1008,6 +1013,22 @@ async function requestAcceptedRewritesOnce(task, rewriteState, attempt, maxAttem
                 return { stale: true, accepted };
             }
             const groupAccepted = parseAiResponse(rawResponse, new Map(group.items.map((item) => [item.id, item])));
+            const repairItems = getBoundaryRepairItems(task, group.items, groupAccepted);
+            task.boundaryRepairGroups ??= new Set();
+            if (repairItems.length && !task.boundaryRepairGroups.has(group.key)) {
+                task.boundaryRepairGroups.add(group.key);
+                recordAiRewriteDebug('boundary-repair-start', { generationId: task.generationId || '', count: repairItems.length });
+                try {
+                    const repairedCount = await repairBoundaryCopies(task, group, groupAccepted,
+                        prompt => requestAiRewrite(prompt, task.aiSettings, controller.signal, task));
+                    recordAiRewriteDebug('boundary-repair-result', { repairedCount, requestedCount: repairItems.length });
+                } catch (error) {
+                    if (controller.signal.aborted) throw error;
+                    recordAiRewriteDebug('boundary-repair-failed', { reason: error?.message || 'request-failed' }, 'warn');
+                }
+                const issue = getTaskFreshnessIssue(task);
+                if (issue) return { stale: true, accepted };
+            }
             groupAccepted.forEach((value, key) => accepted.set(key, value));
             completedGroupKeys.add(group.key);
         } catch (err) {

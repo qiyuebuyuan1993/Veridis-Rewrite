@@ -4,6 +4,7 @@
 import { extensionName } from '../settings/defaults.js';
 import { aiRewriteState } from './state.js';
 import { logger } from '../log.js';
+import { formatLocalLogTime } from './logTime.js';
 
 const debugLogStorageKey = `${extensionName}_ai_rewrite_debug_events`;
 const criticalDebugLogStorageKey = `${extensionName}_ai_rewrite_critical_debug_events`;
@@ -280,7 +281,7 @@ function formatDebugDisplayFields(details, fields) {
 function formatDebugDisplayEvent(event) {
     const details = event?.details && typeof event.details === 'object' ? event.details : {};
     const stage = String(event?.stage || '');
-    const lines = [`[${String(event?.time || '').replace('T', ' ')}] ${debugStageDisplayLabels[stage] || stage}`];
+    const lines = [`[${formatLocalLogTime(event?.time)}] ${debugStageDisplayLabels[stage] || stage}`];
     const compactFields = compactDebugStageFields[stage];
     if (compactFields) {
         const compactLine = formatDebugDisplayFields(details, compactFields);

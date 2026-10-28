@@ -1,3 +1,5 @@
+import { formatLocalLogTime } from './logTime.js';
+
 const maxAiCommunicationRecords = 10;
 const redactedCredentialValue = '[REDACTED]';
 const aiCommunicationRecords = [];
@@ -58,7 +60,7 @@ export function formatAiCommunicationRecords() {
     if (aiCommunicationRecords.length === 0) return '暂无通信记录。';
     return aiCommunicationRecords.map((record) => {
         const lines = [
-            `[${record.timestamp}]`,
+            `[请求开始：${formatLocalLogTime(record.timestamp)}]`,
             `状态: ${record.status === 'succeeded' ? '成功' : '失败'}`,
             `耗时: ${record.durationMs} ms`,
             '令牌用量: 不可用',

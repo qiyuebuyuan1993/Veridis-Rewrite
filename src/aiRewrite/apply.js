@@ -174,6 +174,11 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (dialogueGuard.removedCount) recordAiRewriteDebug('boundary-dialogue-trimmed', {
         generationId: task.generationId || '', index: task.index, removedCount: dialogueGuard.removedCount,
     });
+    const rejectedCopies = dialogueGuard.replacements.filter(item => item.strategy === 'boundary-dialogue-rejected');
+    if (rejectedCopies.length) recordAiRewriteDebug('boundary-dialogue-rejected', {
+        generationId: task.generationId || '', index: task.index, count: rejectedCopies.length,
+        reason: 'Interior source-quote copy; original target retained to preserve facts.',
+    }, 'warn');
     const guarded = mode === 'ai' ? trimAddedNarrationCopies(originalText, dialogueGuard.replacements)
         : dialogueGuard;
     if (guarded.removedCount && mode === 'ai') recordAiRewriteDebug('added-narration-copy-trimmed', {
@@ -202,7 +207,7 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (finalText === currentText && messageStagesEqual(previous, desiredStage)) {
         if (task.automatic === true) generationLifecycle.clearStreamingProgram(task.generationId);
         recordAiRewriteDebug('apply-skip', { reason: 'no-text-change', generationId: task.generationId || '' }, 'warn');
-        return { appliedCount: 0, reason: 'no-text-change' };
+        return { appliedCount: 0, rejectedCount: rejectedCopies.length, reason: 'no-text-change' };
     }
     const commitResult = commitRewriteText(task, {
         currentText,
@@ -222,12 +227,13 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     recordAiRewriteDebug('apply-success', {
         generationId: task.generationId || '',
         index: task.index,
-        appliedCount: selectedItems.length,
+        appliedCount: selectedItems.length - rejectedCopies.length,
+        rejectedCount: rejectedCopies.length,
         strategies: guarded.replacements.map((replacement) => replacement.strategy),
         beforeLength: currentText.length,
         afterLength: finalText.length,
     });
-    return { appliedCount: selectedItems.length, committed: true, reason: '' };
+    return { appliedCount: selectedItems.length - rejectedCopies.length, rejectedCount: rejectedCopies.length, committed: true, reason: '' };
 }
 
 export function applyAcceptedRewrites(task, accepted) {

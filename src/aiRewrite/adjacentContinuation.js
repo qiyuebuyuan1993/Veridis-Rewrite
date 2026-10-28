@@ -2,7 +2,7 @@ import { splitTextRangeIntoSentences } from '../text/sentences.js';
 import { protectedRanges } from './boundaryDialogue.js';
 
 // This is a bounded textual copy check, not semantic deduplication. Only an
-// appended tail of a one-sentence target can be removed; source text never is.
+// appended clause/tail of a one-sentence target can be removed; source text never is.
 const view = text => text.replace(/[\p{P}\p{Z}\s的]/gu, '');
 const repeated = /又|再|反复|第二|第三|依次|轮流|分别|各自|接连|一遍遍/u;
 const sentences = text => splitTextRangeIntoSentences(text, { start: 0, end: text.length })
@@ -12,11 +12,34 @@ const sharesRun = (a, b, length) => {
     return false;
 };
 
+function trimAppendedContrast(source, replacement, replacements, original, rewritten) {
+    const copied = rewritten.match(/[，,]而是([^。！？!?\r\n]+)([。！？!?])$/u);
+    if (!copied || protectedRanges(rewritten).length) return rewritten;
+    const kept = rewritten.slice(0, copied.index);
+    const originalBody = original.slice(0, -1);
+    // Accept an unchanged negative clause or the explicit A/also-not-B -> A-or-B
+    // contraction. Do not infer equivalence from shared words or drop negation.
+    const negative = originalBody.match(/^(.*?(?:不再是|不是))([^，,；;。！？!?或]+)[，,]也不是([^，,；;。！？!?或]+)$/u);
+    if (kept !== originalBody && (!negative || kept !== negative[1] + negative[2] + '或' + negative[3])) return rewritten;
+    if (!/(?:不再是|不是)/u.test(kept)) return rewritten;
+    const following = source.slice(replacement.end, replacement.end + 1000);
+    const anchor = following.match(/^\s*(?:那|这|它)是([^。！？!?\r\n]+)([。！？!?])/u);
+    if (!anchor || protectedRanges(anchor[0]).length) return rewritten;
+    const key = text => text.replace(/[ \t，,]/gu, '');
+    if (key(copied[1]).length < 6 || key(copied[1]) !== key(anchor[1]) || copied[2] !== anchor[2]) return rewritten;
+    const end = replacement.end + anchor[0].length;
+    if (replacements.some(other => other !== replacement && other.start < end && other.end > replacement.end
+        && String(other.rewritten ?? '') !== source.slice(other.start, other.end))) return rewritten;
+    return kept + original.slice(-1);
+}
+
 export function trimAdjacentContinuation(source, replacement, replacements) {
     const original = source.slice(replacement.start, replacement.end).trim();
     const rewritten = String(replacement.rewritten ?? '');
     if (!/[。！？!?]$/u.test(original) || original.length > 800 || rewritten.length > 1600
         || sentences(original).length !== 1 || protectedRanges(original).length || repeated.test(original.replace(/不再/gu, ''))) return rewritten;
+    const contrast = trimAppendedContrast(source, replacement, replacements, original, rewritten);
+    if (contrast !== rewritten) return contrast;
     const spans = sentences(rewritten);
     if (spans.length < 2) return rewritten;
     const split = spans[0].end;

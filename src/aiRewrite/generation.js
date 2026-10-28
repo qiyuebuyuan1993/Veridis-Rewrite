@@ -5,9 +5,10 @@ import { recordAiRewriteDebug } from './debug.js';
 import { recordAiCommunicationFailure, recordAiCommunicationSuccess, snapshotAiCommunicationRequest } from './communicationMonitor.js';
 import { aiRewriteProxyEndpoint, buildAiRewriteProxyBody, hasRuleRouter, requestAiRewriteViaProxy } from './isolatedRequest.js';
 import { parseAiRequestOptions } from './requestOptions.js';
+import { isTauriTavernHost } from '../integrations/tauriTavern.js';
 
 export function getAiRewriteTransport() {
-    return hasRuleRouter() ? 'sillytavern-chat-completions-proxy' : 'tavern-helper-custom-api';
+    return isTauriTavernHost() || hasRuleRouter() ? 'sillytavern-chat-completions-proxy' : 'tavern-helper-custom-api';
 }
 
 export function buildAiRewriteGenerateRawConfig(prompt, aiSettings = {}, generationId = '') {

@@ -15,6 +15,7 @@ export function hasRuleRouter() {
 export function buildAiRewriteProxyBody(requestConfig) {
     const api = requestConfig.custom_api;
     const body = {
+        type: 'quiet',
         chat_completion_source: 'custom',
         custom_url: String(api.apiurl || '').trim().replace(/\/+$/, ''),
         custom_include_headers: JSON.stringify({ Authorization: `Bearer ${api.key || ''}` }),
