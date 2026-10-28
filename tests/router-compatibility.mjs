@@ -58,6 +58,9 @@ beforeEach(() => {
     globalThis.CultivationRuleRouter = router.window.CultivationRuleRouter;
     globalThis.TavernHelper = helper;
     delete globalThis.parent;
+    delete globalThis.__TAURITAVERN__;
+    delete globalThis.__TAURITAVERN_MAIN_READY__;
+    delete globalThis.__TAURI_RUNNING__;
     globalThis.fetch = defaultFetch;
     globalThis.document = { getElementById() {} };
     initAppContext({ getSillyTavernContext: () => host });
@@ -269,4 +272,20 @@ test('Deep Clean timeout aborts the proxy without leaving a background generatio
     assert.equal(counters.helper, 0);
     assert.equal(counters.flash, 0);
     assert.equal(counters.hostStops, 0);
+});
+
+for (const marker of ['__TAURITAVERN__', '__TAURITAVERN_MAIN_READY__', '__TAURI_RUNNING__']) test(`Tauri ${marker}: hidden router marker cannot start helper generation`, async () => {
+    delete globalThis.CultivationRuleRouter;
+    globalThis[marker] = marker === '__TAURI_RUNNING__' ? true : {};
+    assert.equal(getAiRewriteTransport(), 'sillytavern-chat-completions-proxy');
+    globalThis.fetch = async (url, options) => {
+        assert.equal(url, '/api/backends/chat-completions/generate');
+        assert.equal(JSON.parse(options.body).type, 'quiet');
+        return defaultFetch();
+    };
+    await callTavernHelperGenerateRaw(requestConfig());
+    assert.equal(counters.helper, 0);
+    assert.equal(counters.flash, 0);
+    assert.equal(counters.proxy, 1);
+    delete globalThis[marker];
 });

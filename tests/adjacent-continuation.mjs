@@ -3,6 +3,37 @@ import assert from 'node:assert/strict';
 import { trimAddedNarrationCopies } from '../src/aiRewrite/narrationCopies.js';
 import { trimCopiedBoundaryDialogue } from '../src/aiRewrite/boundaryDialogue.js';
 
+test('synthetic contrast copies only the untouched following assertion into a negative target',()=>{
+    const target='那不再是草稿，也不是副本。',next='那是归档，是备份，是保留。';
+    const source=target+'\n\n'+next;
+    const replacement={start:0,end:target.length,rewritten:'那不再是草稿或副本，而是归档，是备份，是保留。'};
+    const result=trimAddedNarrationCopies(source,[replacement]);
+    assert.equal(result.replacements[0].rewritten,'那不再是草稿或副本。');
+    assert.equal(result.removedCount,1);
+    assert.equal(result.replacements[0].rewritten+source.slice(target.length),'那不再是草稿或副本。\n\n'+next);
+});
+
+test('contrast trim preserves changed facts, negation, original repetition and changing neighbors',()=>{
+    const target='这不是撤回，也不是删除。',tail='这是归档，是备份，是保留。',source=target+'\n\n'+tail;
+    const make=rewritten=>({start:0,end:target.length,rewritten});
+    const valid='这不是撤回或删除，而是归档，是备份，是保留。';
+    for(const value of ['这是撤回或删除，而是归档，是备份，是保留。',
+        '这不是撤回或删除，而是归档，是备份，是销毁。',
+        '这不是撤回，而是归档，是备份，是保留。']) {
+        assert.equal(trimAddedNarrationCopies(source,[make(value)]).replacements[0].rewritten,value);
+    }
+    const changed={start:target.length+2,end:source.length,rewritten:'这是删除。'};
+    assert.equal(trimAddedNarrationCopies(source,[make(valid),changed]).replacements[0].rewritten,valid);
+    const repeated=source+'\n\n'+tail;
+    const repaired=trimAddedNarrationCopies(repeated,[make(valid)]).replacements[0].rewritten;
+    assert.equal(repaired,'这不是撤回或删除。');
+    assert.equal(repaired+repeated.slice(target.length),'这不是撤回或删除。\n\n'+tail+'\n\n'+tail);
+    const intervening=target+'\n他转身离开。\n'+tail;
+    assert.equal(trimAddedNarrationCopies(intervening,[make(valid)]).replacements[0].rewritten,valid);
+    const first=trimAddedNarrationCopies(source,[make(valid)]);
+    assert.equal(trimAddedNarrationCopies(source,first.replacements).removedCount,0);
+});
+
 // Synthetic regression examples preserve the reported boundary shapes without
 // publishing private chat records, endpoints or credentials.
 export const fixtures = [

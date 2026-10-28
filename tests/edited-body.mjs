@@ -61,6 +61,87 @@ function harness(kind = 'main', text = edited, previousAi = false) {
     return { msg, chat, settings, key, build, reply, assertUntouched, meta: () => getMessageDiffMeta(msg, key) };
 }
 
+for (const kind of ['main', 'string', 'object']) test(`${kind}: copied quoted noun suffix is trimmed through actual writeback`, () => {
+    const target='纸面留下了极其清晰的、名为',tail='“确认”的印记。';
+    const h=harness(kind,target+tail),task=h.build();
+    assert.equal(task.items.length,1);
+    const result=applyAcceptedRewrites(task,new Map([[task.items[0].id,'纸面留下了'+tail]]));
+    assert.equal(result.committed,true,result.reason);
+    assert.equal(h.msg.mes,'纸面留下了'+tail);
+    assert.equal(h.meta().originalMes,target+tail);
+    h.assertUntouched();
+});
+
+for (const kind of ['main', 'string', 'object']) test(`${kind}: contrast copy is removed without changing original negative facts or the next paragraph`, () => {
+    const target='那不再是草稿，也不是副本。',tail='\n\n那是归档，是备份，是保留。';
+    const h=harness(kind,target+tail);
+    h.settings.rules[0].subRules[0].targets=['不再是'];
+    const task=h.build();
+    assert.equal(task.items.length,1);
+    const result=applyAcceptedRewrites(task,new Map([[task.items[0].id,'那不再是草稿或副本，而是归档，是备份，是保留。']]));
+    assert.equal(result.committed,true,result.reason);
+    assert.equal(h.msg.mes,'那不再是草稿或副本。'+tail);
+    assert.equal(h.meta().originalMes,target+tail);
+    h.assertUntouched();
+});
+
+for (const kind of ['main', 'string', 'object']) test(`${kind}: synthetic sound suffix copy leaves the original message intact`, () => {
+    const target='那只放在桌面的、带有金属搭扣的箱子，发出了轻微的',tail='“咔哒”声。';
+    const h=harness(kind,target+tail);
+    h.settings.rules[0].subRules[0].targets=['轻微'];
+    const task=h.build();
+    assert.equal(task.items.length,1);
+    const result=applyAcceptedRewrites(task,new Map([[task.items[0].id,target+tail]]));
+    assert.equal(result.committed,true,result.reason);
+    assert.equal(h.msg.mes,target+tail);
+    assert.equal(h.meta().originalMes,target+tail);
+    h.assertUntouched();
+});
+
+for (const kind of ['main', 'string', 'object']) test(`${kind}: synthetic keeps word-order edit and removes only the copied subject`, () => {
+    const prefix='架子上的铁盒“哐当”',target='一声掉在了地上，发出清脆的声响。',tail='\n\n管理员没有回头，也不需要回头。';
+    const h=harness(kind,prefix+target+tail);
+    h.settings.rules[0].subRules[0].targets=['一声'];
+    const task=h.build();
+    assert.equal(task.items.length,1);
+    const result=applyAcceptedRewrites(task,new Map([[task.items[0].id,'铁盒掉在了地上，发出清脆的响声。']]));
+    assert.equal(result.committed,true,result.reason);
+    assert.equal(h.msg.mes,prefix+'掉在了地上，发出清脆的响声。'+tail);
+    assert.equal(h.meta().originalMes,prefix+target+tail);
+    h.assertUntouched();
+});
+
+for (const kind of ['main', 'string', 'object']) test(`${kind}: interior copied name preserves target facts and still applies independent edits`, () => {
+    const target='面板上，有一行用激光刻下的、如今已与涂层融为一体的银色花体铭文，';
+    const tail='“Archive”。\n他极其认真地记录。',original=target+tail;
+    const h=harness(kind,original);
+    h.settings.rules[0].subRules[0].targets=['铭文','极其'];
+    const task=h.build();
+    assert.equal(task.items.length,2);
+    const replies=new Map(task.items.map(item=>[item.id,item.text.includes('铭文')
+        ?'面板上有一行用激光刻下的银色花体铭文，“Archive”，已与涂层融为一体。':'他认真地记录。']));
+    const result=applyAcceptedRewrites(task,replies);
+    assert.equal(result.committed,true,result.reason);
+    assert.equal(h.msg.mes,target+'“Archive”。\n他认真地记录。');
+    assert.equal(h.meta().originalMes,original);
+    h.assertUntouched();
+});
+
+test('accepted naming-fragment completion preserves external term and dialogue through actual writeback', () => {
+    const target='管理员的语气里甚至带上了一丝可以称之为';
+    const quote='“好的。既然是读者的请求，我们当然会认真地、及时地回复。”';
+    const tail='“亲切”的笑意，'+quote;
+    const h=harness('main',target+tail);
+    h.settings.rules[0].subRules[0].targets=['甚至'];
+    const task=h.build();
+    assert.equal(task.items.length,1);
+    const result=applyAcceptedRewrites(task,new Map([[task.items[0].id,'管理员的语气里带上了一丝笑意，'+quote]]));
+    assert.equal(result.committed,true,result.reason);
+    assert.equal(h.msg.mes,'管理员的语气里带上了一丝'+tail);
+    assert.equal(h.meta().originalMes,target+tail);
+    h.assertUntouched();
+});
+
 for (const kind of ['main', 'string', 'object']) {
     for (const previousAi of [false, true]) test(`${kind}: edits before request rebase ${previousAi ? 'AI' : 'Program'} history on successful commit`, () => {
         const h = harness(kind, edited, previousAi), previous = structuredClone(h.meta());
@@ -289,4 +370,47 @@ for(const kind of ['main','string','object']) test(`${kind}: preceding speech co
     assert.equal(h.msg.mes,quote+cleaned+tail.replace('——','，'));
     assert.equal(h.meta().originalMes,source);assert.equal(h.meta().aiMes,quote+cleaned+tail);
     assert.equal(h.meta().programMes,h.msg.mes);h.assertUntouched();
+});
+
+for (const succeeds of [true, false]) test(`bounded interior-copy repair: successful=${succeeds}`, async () => {
+    const target='面板上，有一行用激光刻下的、如今已与涂层融为一体的银色花体铭文，';
+    const tail='“Archive”。\n他极其认真地记录。';
+    const h=harness('string',target+tail);
+    h.settings.rules[0].subRules[0].targets=['铭文','极其'];
+    const clean='面板上有一行以激光刻下、已与涂层融为一体的银色花体铭文，';
+    const bad='面板上有一行用激光刻下的银色花体铭文，“Archive”，已与涂层融为一体。';
+    let requests=0;
+    globalThis.fetch=async(_url,options)=>{
+        requests++;
+        const prompt=JSON.parse(options.body).messages[0].content;
+        const ids=[...prompt.matchAll(/<rewrite_target id="([^"]+)"/g)].map(match=>match[1]);
+        if(requests===2){ assert.equal(ids.length,1);assert.ok(prompt.includes('替换边界纠正')); }
+        const response=Object.fromEntries(ids.map((id,index)=>[id,requests===1?(index===0?bad:'他认真地记录。'):(succeeds?clean:bad)]));
+        return {ok:true,status:200,json:async()=>({choices:[{message:{content:JSON.stringify(response)}}]})};
+    };
+    const result=await runAiRewriteForMessageNow(1,{manual:true});
+    assert.equal(requests,2);
+    assert.equal(result.status,succeeds?'applied':'partial');
+    assert.equal(h.msg.mes,(succeeds?clean:target)+'“Archive”。\n他认真地记录。');
+    assert.equal(h.meta().originalMes,target+tail);
+    h.assertUntouched();
+});
+
+for (const mode of ['cancel', 'stale', 'invalid-json']) test(`boundary correction respects ${mode}`, async () => {
+    const target='那里有极其清晰的、已与纸面融为一体的铭文，',tail='“确认”。';
+    const h=harness('main',target+tail);let requests=0;
+    globalThis.fetch=async(_url,options)=>{
+        requests++;
+        if(requests===2){
+            if(mode==='stale')h.msg.mes='用户新写的正文。';
+            if(mode==='cancel'){cancelAiRewriteTask();throw new DOMException('Aborted','AbortError');}
+        }
+        return{ok:true,status:200,json:async()=>({choices:[{message:{content:requests===1
+            ?JSON.stringify({'hit-1':'那里有清晰的铭文，“确认”，已与纸面融为一体。'})
+            :mode==='invalid-json'?'bad JSON':JSON.stringify({'hit-1':'那里有清晰的、已与纸面融为一体的铭文，'})}}]})};
+    };
+    await runAiRewriteForMessageNow(1,{manual:true});
+    assert.equal(requests,2);
+    assert.equal(h.msg.mes,mode==='stale'?'用户新写的正文。':target+tail);
+    h.assertUntouched();
 });

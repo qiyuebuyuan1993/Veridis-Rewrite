@@ -53,3 +53,15 @@ npm run test:startup
 
 示例使用 POSIX 环境变量写法；PowerShell 中使用 `$env:变量名='值'` 后运行相同的 npm 命令。
 真实 Luker 联合测试的结果和边界另见 [验证记录](../docs/compatibility-verification.md)。
+
+
+## 修复22补充
+
+`npm test` 包含本地时间显示、边界回抄、一次受限纠正、取消和过期写回检查。测试正文为合成示例。
+
+TauriTavern 路由契约测试另行运行 `npm run test:tauri`。设置 `VERIDIS_TAURI_REFERENCE` 为外部 fixture 目录，并从固定提交 `fff9af0333be97697be2313981699ab0ce35c236` 下载以下文件，分别保存为：
+
+- `tauri240-ai-routes.js`：[ai-routes.js](https://github.com/Darkatse/TauriTavern/blob/fff9af0333be97697be2313981699ab0ce35c236/src/tauri/main/routes/ai-routes.js)
+- `tauri240-generation-lifecycle.js`：[generation-lifecycle-service.js](https://github.com/Darkatse/TauriTavern/blob/fff9af0333be97697be2313981699ab0ce35c236/src/tauri/main/services/ai/generation-lifecycle-service.js)
+
+该测试运行固定版本的真实路由与生命周期源码，原生桥接及模型响应由测试替身提供，不代表真实 Tauri 应用或 Android 设备实测。第三方源码不随本仓库重新分发。
