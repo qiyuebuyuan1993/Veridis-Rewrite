@@ -30,7 +30,7 @@ import { syncComposerButtonScript } from './src/aiRewrite/composerButton.js';
 import { readExtensionManifest } from './src/host/extensionManifest.js';
 import { resolveExtensionIdentity } from './src/host/extensionIdentity.js';
 import { collectInstalledEnabledExtensions, getEnabledExtensionExternalIds } from './src/feedback/payload.js';
-import { bindUpdateStatusEvents, initializeUpdateStatus } from './src/update/status.js';
+import { bindUpdateStatusEvents, initializeUpdateStatus, loadLocalUpdateVersion } from './src/update/status.js';
 
 const { extension_settings, getContext: getSillyTavernContext } = extensionsModule;
 const { externalId: veridisExternalId, folderName: veridisExtensionFolderName, templateDirectory } = resolveExtensionIdentity(import.meta.url);
@@ -164,6 +164,7 @@ jQuery(() => {
             saveSettingsDebounced();
         }
         bindEvents();
+        await loadLocalUpdateVersion();
         bindUpdateStatusEvents(async () => {
             const versionInfo = await captureVeridisCommit();
             await initializeUpdateStatus({
