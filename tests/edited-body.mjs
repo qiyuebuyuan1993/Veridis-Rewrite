@@ -1,3 +1,7 @@
+function localEditResponse(prompt, values) {
+ const targets=new Map([...prompt.matchAll(/<rewrite_target id="([^"]+)"[^>]*>([\s\S]*?)<\/rewrite_target>/g)].map(m=>[m[1],m[2]]));
+ return JSON.stringify(Object.fromEntries(Object.entries(values).map(([id,after])=>[id,[{before:targets.get(id),occurrence:0,after}]])));
+}
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { initAppContext } from '../src/host/appContext.js';
@@ -219,8 +223,8 @@ test('Program fallback on edited source preserves edits, dialogue, counts and ap
 
 test('full manual request, valid model response, rebase and native atomic writeback succeed together', async () => {
     const h = harness('object'); let requests = 0;
-    globalThis.fetch = async () => { requests++; return { ok: true, status: 200, json: async () => ({ choices: [
-        { message: { content: JSON.stringify({ 'hit-1': rewritten }) } } ] }) }; };
+    globalThis.fetch = async (_url,options) => { requests++; return { ok: true, status: 200, json: async () => ({ choices: [
+        { message: { content: localEditResponse(JSON.parse(options.body).messages[0].content,{ 'hit-1': rewritten }) } } ] }) }; };
     await runAiRewriteForMessageNow(1, { manual: true });
     assert.equal(requests, 1); assert.ok(h.msg.mes.startsWith(rewritten));
     assert.equal(h.meta().originalMes, edited); h.assertUntouched();
@@ -337,7 +341,7 @@ for (const previousAi of [false,true]) test(`single Swipe 0: empty ${previousAi?
     globalThis.fetch=async(_url,options)=>{
         requests++;const body=JSON.parse(options.body);
         assert.ok(body.messages[0].content.includes('检查柜子'));assert.ok(!body.messages[0].content.includes('检查桌面'));
-        return{ok:true,status:200,json:async()=>({choices:[{message:{content:JSON.stringify({'hit-1':'他认真地检查柜子。'})}}]})};
+        return{ok:true,status:200,json:async()=>({choices:[{message:{content:localEditResponse(body.messages[0].content,{'hit-1':'他认真地检查柜子。'})}}]})};
     };
     await runAiRewriteForMessageNow(1,{manual:true});
     assert.equal(requests,1);
@@ -372,7 +376,7 @@ for(const kind of ['main','string','object']) test(`${kind}: preceding speech co
     assert.equal(h.meta().programMes,h.msg.mes);h.assertUntouched();
 });
 
-for (const succeeds of [true, false]) test(`bounded interior-copy repair: successful=${succeeds}`, async () => {
+for (const succeeds of [true, false]) test(`single request accepts clean result and explicitly reports uncertain interior copy: clean=${succeeds}`, async () => {
     const target='面板上，有一行用激光刻下的、如今已与涂层融为一体的银色花体铭文，';
     const tail='“Archive”。\n他极其认真地记录。';
     const h=harness('string',target+tail);
@@ -384,34 +388,31 @@ for (const succeeds of [true, false]) test(`bounded interior-copy repair: succes
         requests++;
         const prompt=JSON.parse(options.body).messages[0].content;
         const ids=[...prompt.matchAll(/<rewrite_target id="([^"]+)"/g)].map(match=>match[1]);
-        if(requests===2){ assert.equal(ids.length,1);assert.ok(prompt.includes('替换边界纠正')); }
-        const response=Object.fromEntries(ids.map((id,index)=>[id,requests===1?(index===0?bad:'他认真地记录。'):(succeeds?clean:bad)]));
-        return {ok:true,status:200,json:async()=>({choices:[{message:{content:JSON.stringify(response)}}]})};
+        const response=Object.fromEntries(ids.map((id,index)=>[id,index===0?(succeeds?clean:bad):'他认真地记录。']));
+        return {ok:true,status:200,json:async()=>({choices:[{message:{content:localEditResponse(prompt,response)}}]})};
     };
     const result=await runAiRewriteForMessageNow(1,{manual:true});
-    assert.equal(requests,2);
+    assert.equal(requests,1);
     assert.equal(result.status,succeeds?'applied':'partial');
     assert.equal(h.msg.mes,(succeeds?clean:target)+'“Archive”。\n他认真地记录。');
     assert.equal(h.meta().originalMes,target+tail);
     h.assertUntouched();
 });
 
-for (const mode of ['cancel', 'stale', 'invalid-json']) test(`boundary correction respects ${mode}`, async () => {
+for (const mode of ['cancel', 'stale', 'invalid-json']) test(`single request respects ${mode} without correction calls`, async () => {
     const target='那里有极其清晰的、已与纸面融为一体的铭文，',tail='“确认”。';
     const h=harness('main',target+tail);let requests=0;
     globalThis.fetch=async(_url,options)=>{
         requests++;
-        if(requests===2){
+        if(requests===1){
             if(mode==='stale')h.msg.mes='用户新写的正文。';
             if(mode==='cancel'){cancelAiRewriteTask();throw new DOMException('Aborted','AbortError');}
         }
-        return{ok:true,status:200,json:async()=>({choices:[{message:{content:requests===1
-            ?JSON.stringify({'hit-1':'那里有清晰的铭文，“确认”，已与纸面融为一体。'})
-            :mode==='invalid-json'?'bad JSON':JSON.stringify({'hit-1':'那里有清晰的、已与纸面融为一体的铭文，'})}}]})};
+        return{ok:true,status:200,json:async()=>({choices:[{message:{content:mode==='invalid-json'?'bad JSON':localEditResponse(JSON.parse(options.body).messages[0].content,{'hit-1':'那里有清晰的铭文，“确认”，已与纸面融为一体。'})}}]})};
     };
     await runAiRewriteForMessageNow(1,{manual:true});
-    assert.equal(requests,2);
-    assert.equal(h.msg.mes,mode==='stale'?'用户新写的正文。':target+tail);
+    assert.equal(requests,1);
+    assert.equal(h.msg.mes,mode==='stale'?'用户新写的正文。':(mode==='invalid-json'?target.replace('极其',''):target)+tail);
     h.assertUntouched();
 });
 
@@ -428,4 +429,115 @@ test('restore retained result keeps stages, swipe and manual edits safe',()=>{
     assert.equal(restoreMessageDiffResult(msg),false);assert.equal(msg.mes,'手动编辑');
     msg.swipe_id=1;assert.equal(restoreMessageDiffResult(msg),false);
     assert.equal(restoreMessageDiffResult({mes:'旧文',__blai_diff_branch_meta:{main:{reverted:true}}}),false);
+});
+
+test('local edits use real request/writeback and preserve the locked quoted action and neighboring sentence',async()=>{
+ const target='他忽然拿起笔，在',tail='“选项”上画了两个圆圈。并没有离开。',source=target+tail;
+ const h=harness('string',source);h.settings.rules[0].subRules[0].targets=['忽然'];
+ globalThis.fetch=async()=>({ok:true,status:200,json:async()=>({choices:[{message:{content:JSON.stringify({'hit-1':[{before:'忽然',occurrence:0,after:''}]})}}]})});
+ await runAiRewriteForMessageNow(1,{manual:true});
+ assert.equal(h.msg.mes,'他拿起笔，在'+tail);assert.equal(h.meta().aiMes,'他拿起笔，在'+tail);h.assertUntouched();
+});
+test('out-of-target edit is rejected without another request or overwriting locked source',async()=>{
+ const target='他忽然拿起笔，在',tail='“选项”上画了两个圆圈。并没有离开。',h=harness('string',target+tail);
+ h.settings.rules[0].subRules[0].targets=['忽然'];let calls=0;
+ globalThis.fetch=async()=>{calls++;return {ok:true,status:200,json:async()=>({choices:[{message:{content:JSON.stringify({'hit-1':[{before:'并没有离开',occurrence:0,after:'离开了'}]})}}]})}};
+ await runAiRewriteForMessageNow(1,{manual:true});
+ assert.equal(calls,1);assert.ok(h.msg.mes.endsWith(tail));h.assertUntouched();
+});
+
+test('unchanged model output is not reported as completed cleanup', async()=>{
+ const h=harness('string','他极其认真地记录。');
+ globalThis.fetch=async()=>({ok:true,status:200,json:async()=>({choices:[{message:{content:'{"hit-1":[]}'}}]})});
+ const result=await runAiRewriteForMessageNow(1,{manual:true});
+ assert.equal(result.status,'unchanged-targets');
+ assert.equal(h.msg.mes,'他极其认真地记录。');h.assertUntouched();
+});
+
+for(const streamingEnabled of [false,true]) test(`private preset integration cleans matched wording: stream=${streamingEnabled}`,
+ {skip:!process.env.VERIDIS_PRIVATE_PRESET},async()=>{
+ const {readFileSync}=await import('node:fs');
+ const preset=JSON.parse(readFileSync(process.env.VERIDIS_PRIVATE_PRESET,'utf8'));
+ const source='<content>他忽然拿起笔，在“选项”上画了两个圆圈。\n他极其认真地记录。\n“忽然，别走。”\n他没有离开。又检查了两遍。</content>';
+ const h=harness('string',source);
+ h.settings.rules=preset.rules;
+ h.settings.aiRewrite.streamingEnabled=streamingEnabled;
+ const sse=readFileSync(process.env.VERIDIS_SSE_SOURCE,'utf8');
+ const EventSourceStream=new Function(sse.slice(sse.indexOf('class EventSourceStream'),sse.indexOf('function getDelay'))+';return EventSourceStream;')();
+ initAppContext({createEventSourceStream:async()=>new EventSourceStream()});
+ const task=h.build();
+ assert.ok(task.items.some(item=>item.text.includes('忽然')));
+ assert.ok(task.items.some(item=>item.text.includes('极其')));
+ let calls=0;
+ globalThis.fetch=async(_url,options)=>{
+  calls++;
+  const body=JSON.parse(options.body);assert.equal(body.stream,streamingEnabled);
+  const prompt=body.messages[0].content;
+  assert.ok(prompt.includes('最终输出格式'));
+  const targets=[...prompt.matchAll(/<rewrite_target id="([^"]+)"[^>]*>([\s\S]*?)<\/rewrite_target>/g)];
+  const answer=JSON.stringify(Object.fromEntries(targets.map(m=>[m[1],
+   m[2].replace('忽然','').replace('极其','')])));
+  if(!streamingEnabled)return new Response(JSON.stringify({choices:[{message:{content:answer}}]}),{headers:{'Content-Type':'application/json'}});
+  const event='data: '+JSON.stringify({choices:[{index:0,delta:{content:answer}}]})+'\n\ndata: [DONE]\n\n';
+  const bytes=new TextEncoder().encode(event);
+  return new Response(new ReadableStream({start(c){for(let i=0;i<bytes.length;i+=7)c.enqueue(bytes.slice(i,i+7));c.close();}}),{headers:{'Content-Type':'text/event-stream'}});
+ };
+ const result=await runAiRewriteForMessageNow(1,{manual:true});
+ assert.ok(['applied','unchanged-targets'].includes(result.status),result.status);
+ assert.equal(calls,1);
+ assert.equal(h.msg.mes,source.replace('他忽然','他').replace('他极其','他'));
+ assert.equal(h.meta().originalMes,source);h.assertUntouched();
+});
+
+test('original string protocol removes copied nominal speech while completing cleanup',async()=>{
+ const prefix='那句“我们是一家人，不是吗？”',target='如同一颗投入静水的小石，在他心里激起涟漪。',tail='他没有离开。';
+ const h=harness('string',prefix+target+tail);h.settings.rules[0].subRules[0].targets=['如同'];
+ globalThis.fetch=async()=>({ok:true,status:200,json:async()=>({choices:[{message:{content:JSON.stringify({'hit-1':prefix+'让他心中泛起波动。'})}}]})});
+ const result=await runAiRewriteForMessageNow(1,{manual:true});
+ assert.equal(result.status,'applied');assert.equal(h.msg.mes,prefix+'让他心中泛起波动。'+tail);
+ assert.equal(h.meta().originalMes,prefix+target+tail);h.assertUntouched();
+});
+
+test('paraphrased protected mode is corrected without discarding the requested cleanup',async()=>{
+ const target='他下意识地抬起头，看向同事，努力从思绪中抽离，进入',tail='“公务模式”。';
+ const h=harness('string',target+tail);h.settings.rules[0].subRules[0].targets=['下意识'];
+ let calls=0;
+ globalThis.fetch=async()=>{calls++;return {ok:true,status:200,json:async()=>({choices:[{message:{content:JSON.stringify({'hit-1':calls===1?'他抬起头，看向同事，努力从思绪中抽离，进入公务状态。':'他抬起头，看向同事，努力从思绪中抽离，进入'})}}]})};};
+ const result=await runAiRewriteForMessageNow(1,{manual:true});
+ assert.equal(calls,1);assert.equal(result.status,'applied');
+ assert.equal(h.msg.mes,target.replace('下意识地','')+tail);
+ assert.equal(h.meta().originalMes,target+tail);h.assertUntouched();
+});
+
+for (const streamingEnabled of [false,true]) test(`recorded quoted completions retain cleanup with one request: stream=${streamingEnabled}`,async()=>{
+ const {readFileSync}=await import('node:fs');
+ const fixtures=process.env.VERIDIS_PRIVATE_BOUNDARY_CASES
+  ? JSON.parse(readFileSync(process.env.VERIDIS_PRIVATE_BOUNDARY_CASES,'utf8'))
+  : [{id:'hit-1',target:'这句话，彻底打破了他建立起来的那套',tail:'“效率”的逻辑。它绕过了所有关于“职责”的思考。',bad:'这句话，打破了他建立起来的那套逻辑。它绕过了关于职责的思考。',expected:'这句话，打破了他建立起来的那套'}];
+ const sse=readFileSync(process.env.VERIDIS_SSE_SOURCE || new URL('../../compat-reference/sse-stream.js',import.meta.url),'utf8');
+ const EventSourceStream=new Function(sse.slice(sse.indexOf('class EventSourceStream'),sse.indexOf('function getDelay'))+';return EventSourceStream;')();
+ for(const f of fixtures){
+  const h=harness('string',f.target+f.tail);
+  h.settings.rules[0].subRules[0].targets=[f.target];
+  h.settings.rules[0].subRules[1].enabled=false;
+  h.settings.aiRewrite.streamingEnabled=streamingEnabled;
+  // Even a user-configured retry budget must not be used to correct content.
+  h.settings.aiRewrite.maxRetries=3;
+  initAppContext({createEventSourceStream:async()=>new EventSourceStream()});
+  const task=h.build();assert.equal(task.items.length,1);assert.equal(task.items[0].text,f.target);
+  let requests=0;
+  globalThis.fetch=async(_url,options)=>{
+   requests++;assert.equal(JSON.parse(options.body).stream,streamingEnabled);
+   const answer=JSON.stringify({[task.items[0].id]:f.bad});
+   if(!streamingEnabled)return new Response(JSON.stringify({choices:[{message:{content:answer}}]}),{headers:{'Content-Type':'application/json'}});
+   const bytes=new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content:answer}}]})+'\n\ndata: [DONE]\n\n');
+   return new Response(new ReadableStream({start(c){for(let i=0;i<bytes.length;i+=5)c.enqueue(bytes.slice(i,i+5));c.close();}}),{headers:{'Content-Type':'text/event-stream'}});
+  };
+  const result=await runAiRewriteForMessageNow(1,{manual:true});
+  assert.equal(requests,1);assert.equal(result.status,'applied');
+  const expected=f.expected;
+  assert.notEqual(expected,f.target,'must actually retain the model cleanup');
+  assert.equal(h.msg.mes,expected+f.tail);assert.equal(h.meta().originalMes,f.target+f.tail);
+  h.assertUntouched();
+ }
 });

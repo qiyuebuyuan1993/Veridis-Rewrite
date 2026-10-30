@@ -301,3 +301,70 @@ test('named-term guard preserves original facts and changed neighbors',()=>{
     assert.equal(guard(s,[replace(s,t,'茶香构成日常图景。'),replace(s,'“日常”','“生活”')]).replacements[0].strategy,undefined);
     assert.equal(guard(s,[replace(s,t,'茶香形成了')]).text,'茶香形成了“日常”的氛围。');
 });
+
+test('retained quoted option and complete action tail are trimmed despite a comma change',()=>{
+ const target='他拿起朱笔，不再是询问，而是在',tail='“绿茶”的选项上，画下了一个清晰而有力的圆圈。',source=target+tail;
+ const clean='他拿起朱笔，在';
+ const result=guard(source,[replace(source,target,clean+tail.replace('上，','上'))]);
+ assert.equal(result.text,clean+tail);
+ assert.equal(result.replacements[0].strategy,'boundary-dialogue-trimmed');
+ for(const changed of [tail.replace('一个','两个'),tail.replace('画下','没有画下')]){
+  const response=clean+changed;
+  assert.equal(guard(source,[replace(source,target,response)]).replacements[0].rewritten,response);
+ }
+ assert.equal(guard(source,[replace(source,target,clean+tail),replace(source,tail,'其他事件。')]).removedCount,0);
+});
+
+test('copied exact nominal quote is removed, changed quotes and changed neighboring targets are preserved',()=>{
+ const prefix='那句“不要离开。”',target='像石子落入心中。',source=prefix+target;
+ const clean='让他心中泛起波动。';
+ assert.equal(guard(source,[replace(source,target,prefix+clean)]).text,prefix+clean);
+ const changed='那句“可以离开。”'+clean;
+ assert.equal(guard(source,[replace(source,target,changed)]).text,prefix+changed);
+ const result=guard(source,[{start:0,end:2,rewritten:'这句话'},replace(source,target,prefix+clean)]);
+ assert.equal(result.replacements[1].rewritten,prefix+clean);
+});
+
+test('nominal speech with modifiers and whitespace preserves source and cleaned predicate',()=>{
+ for(const prefix of ['那句带着绝对信赖的“我们是一家人，不是吗？”','这句带着迟疑的 “请留下。”']){
+  const target='，像一颗投入深潭的石子，在他心中激起巨浪。',source='前句。\n'+prefix+target;
+  const clean='让他心中产生了剧烈的震颤。';
+  assert.equal(guard(source,[replace(source,target,prefix+clean)]).text,'前句。\n'+prefix+clean);
+  assert.equal(guard(source,[replace(source,target,prefix)]).text,source);
+ }
+});
+
+
+test('anchored paraphrase projection retains cleanup and every original external byte',()=>{
+ const target='这句话，彻底打破了他建立起来的那套';
+ const tail='“效率”的逻辑。它绕过了所有关于“职责”的思考。\n他没有离开，又检查了两遍。';
+ const value='这句话，打破了他建立起来的那套逻辑。它绕过了关于职责的思考。';
+ const result=guard(target+tail,[replace(target+tail,target,value)]);
+ assert.equal(result.text,'这句话，打破了他建立起来的那套'+tail);
+ assert.notEqual(result.replacements[0].rewritten,target);
+ assert.equal(trimCopiedBoundaryDialogue(target+tail,result.replacements).removedCount,0);
+});
+
+test('anchored projection does not trim moved target facts, changed neighbors or complete sentences',()=>{
+ const target='他确认计划已经取消，准备进入', tail='“登记”流程。', source=target+tail;
+ const moved='他准备进入“登记”流程，原计划已经取消。';
+ assert.equal(guard(source,[replace(source,target,moved)]).replacements[0].rewritten,moved);
+ const copied='他确认计划已经取消，准备进入“登记”流程。';
+ assert.equal(guard(source,[replace(source,target,copied),replace(source,'流程。','房间。')]).replacements[0].rewritten,copied);
+ const complete='他没有进入。';
+ assert.equal(guard(complete+tail,[replace(complete+tail,complete,'他没有进入“登记”流程。')]).replacements[0].rewritten,'他没有进入“登记”流程。');
+});
+
+
+test('external cause projection preserves the original negative fact and completes contrast cleanup',()=>{
+ const target='他不是在哭泣，而是在颤抖。',tail='为这份他从未想象过的、被珍视的感觉。';
+ const value='他因这份从未想象过的、被珍视的感觉而颤抖。';
+ const result=guard(target+tail,[replace(target+tail,target,value)]);
+ assert.equal(result.text,'他在颤抖，没有哭泣。'+tail);
+ assert.equal(result.replacements[0].strategy,'boundary-dialogue-trimmed');
+ assert.equal(trimCopiedBoundaryDialogue(target+tail,result.replacements).removedCount,0);
+ for(const other of ['她因这份从未想象过的、被珍视的感觉而颤抖。','他因这份从未想象过的、被珍视的感觉而哭泣。','他因完全不同的原因与对象而颤抖。'])
+  assert.equal(guard(target+tail,[replace(target+tail,target,other)]).replacements[0].rewritten,other);
+ const changed=guard(target+tail,[replace(target+tail,target,value),replace(target+tail,tail,'为了别的原因。')]);
+ assert.equal(changed.replacements[0].rewritten,value);
+});

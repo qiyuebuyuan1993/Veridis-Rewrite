@@ -240,7 +240,7 @@ test('Deep Clean uses the same isolated transport and produces a proposal withou
     globalThis.fetch = async (_url, { signal }) => {
         counters.proxy++;
         proxySignal = signal;
-        return { ok: true, json: async () => ({ choices: [{ message: { content: '{"item-0-hit-1":"Rewritten."}' } }] }) };
+        return { ok: true, json: async () => ({ choices: [{ message: { content: '{"item-0-hit-1":[{"before":"Original.","occurrence":0,"after":"Rewritten."}]}' } }] }) };
     };
     const result = await executeDeepCleanAiRequests(run);
     assert.deepEqual(result.aiProposedResults, [{ itemIndex: 0, aiCandidate: 'Rewritten.' }]);
