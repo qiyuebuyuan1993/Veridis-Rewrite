@@ -1,5 +1,5 @@
 /** Owns each branch's replaceable stage record and text-free revert protection after eviction. */
-import { getMessageDiffBranchKey } from '../chat/messageBranch.js';
+import { getMessageDiffBranchKey, commitCurrentMessageText, clearMessageDisplayText, syncCurrentSwipeExtra } from '../chat/messageBranch.js';
 import { extensionName } from '../settings/defaults.js';
 
 const branchMetaKey = '__blai_diff_branch_meta';
@@ -167,4 +167,16 @@ export function migrateChatDiffMetadata(chat, chatMetadata) {
         changed = true;
     }
     return changed;
+}
+
+/** Restore the retained result only while the current branch still shows its original. */
+export function restoreMessageDiffResult(msg) {
+    const branchKey = getMessageDiffBranchKey(msg);
+    const meta = getMessageDiffMeta(msg, branchKey);
+    if (!meta || !isMessageDiffReverted(msg) || msg.mes !== meta.originalMes) return false;
+    if (!commitCurrentMessageText(msg, meta.programMes, branchKey).ok) return false;
+    clearMessageDisplayText(msg);
+    syncCurrentSwipeExtra(msg);
+    setMessageDiffReverted(msg, false, branchKey);
+    return true;
 }

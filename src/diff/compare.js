@@ -248,6 +248,9 @@ function getSnippetPairOperations(pair, operations) {
 export function renderDiffDocument(pairs, mode) {
     const blocks = [];
     for (const pair of pairs) {
+        // An unchanged later stage adds no comparison information to a full view.
+        if (mode === 'full' && pair.oldText === pair.newText
+            && pairs.some(other => other.oldText !== other.newText)) continue;
         const operations = getDifferencePairOperations(pair);
         const runs = (mode === 'full'
             ? operations
