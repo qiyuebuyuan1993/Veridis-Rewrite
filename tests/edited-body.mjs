@@ -5,7 +5,7 @@ import { extensionName, defaultSettings, defaultAiRewriteSettings } from '../src
 import { buildAiRewriteTaskCheck, runAiRewriteForMessageNow, cancelAiRewriteTask, resetAiRewriteRuntimeState } from '../src/aiRewrite/runtime.js';
 import { applyAcceptedRewrites, applyProgramFallbackRewrites } from '../src/aiRewrite/apply.js';
 import { resolveManualProgramTail } from '../src/aiRewrite/task.js';
-import { writeMessageDiffProgram, writeMessageDiffAiStage, getMessageDiffMeta, setMessageDiffReverted } from '../src/diff/messageMeta.js';
+import { writeMessageDiffProgram, writeMessageDiffAiStage, getMessageDiffMeta, setMessageDiffReverted, restoreMessageDiffResult } from '../src/diff/messageMeta.js';
 import { getMessageDiffBranchKey, setCurrentSwipeText } from '../src/chat/messageBranch.js';
 import { applyScopedCompiledReplacements } from '../src/rules/engine.js';
 import { getAiRewriteRuntimeLog, clearAiRewriteDebugLog } from '../src/aiRewrite/debug.js';
@@ -413,4 +413,19 @@ for (const mode of ['cancel', 'stale', 'invalid-json']) test(`boundary correctio
     assert.equal(requests,2);
     assert.equal(h.msg.mes,mode==='stale'?'用户新写的正文。':target+tail);
     h.assertUntouched();
+});
+
+
+test('restore retained result keeps stages, swipe and manual edits safe',()=>{
+    const msg={mes:'原文',swipe_id:0,swipes:['原文','另一分支']};
+    writeMessageDiffAiStage(msg,'swipe:0','原文','AI结果','最终结果');
+    setMessageDiffReverted(msg,true);
+    assert.equal(restoreMessageDiffResult(msg),true);
+    assert.equal(msg.mes,'最终结果');assert.equal(msg.swipes[0],'最终结果');
+    assert.equal(msg.swipes[1],'另一分支');assert.equal(getMessageDiffMeta(msg).aiMes,'AI结果');
+    assert.equal(getMessageDiffMeta(msg).reverted,false);
+    setMessageDiffReverted(msg,true);msg.mes='手动编辑';
+    assert.equal(restoreMessageDiffResult(msg),false);assert.equal(msg.mes,'手动编辑');
+    msg.swipe_id=1;assert.equal(restoreMessageDiffResult(msg),false);
+    assert.equal(restoreMessageDiffResult({mes:'旧文',__blai_diff_branch_meta:{main:{reverted:true}}}),false);
 });

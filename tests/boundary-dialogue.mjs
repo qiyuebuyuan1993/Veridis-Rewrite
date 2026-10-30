@@ -8,6 +8,60 @@ const guard = (source, replacements) => {
     return { ...result, text: result.replacements.slice().sort((a,b)=>b.start-a.start).reduce((text,r)=>text.slice(0,r.start)+r.rewritten+text.slice(r.end),source) };
 };
 
+test('empty predicate after a nominal quoted response is rejected without deleting source',()=>{
+    const prefix='那一声迟疑的“好！”',target='，像一颗石子，落入他的心中。',source=prefix+target;
+    const result=guard(source,[replace(source,target,'')]);
+    assert.equal(result.text,source);
+    assert.equal(result.replacements[0].strategy,'boundary-dialogue-rejected');
+    assert.equal(guard(source,[replace(source,target,'，让他感到安慰。')]).text,prefix+'，让他感到安慰。');
+});
+test('empty standalone descriptions and predicates after complete speech remain allowed',()=>{
+    for(const [prefix,target] of [['','因为用力而泛白。'],['他说“好！”','，像一颗石子。']]) {
+        const source=prefix+target;
+        assert.equal(guard(source,[replace(source,target,'')]).text,prefix);
+    }
+});
+
+test('leading paired terms and narration plus term are removed only from generated prefix',()=>{
+    for (const [before,target,value,kept] of [
+        ['一种用“礼貌”和“沉稳”','精心包裹起来的东西，出现了裂缝。','“礼貌”和“沉稳”的外壳，出现了裂缝。','的外壳，出现了裂缝。'],
+        ['我想确认，“登记”','这个仪式，对他而言，是否依然重要。','我想确认“登记”这个仪式，对他而言是否依然重要。','这个仪式，对他而言是否依然重要。'],
+    ]) {
+        const source=before+target, result=guard(source,[replace(source,target,value)]);
+        assert.equal(result.text,before+kept);
+        assert.equal(trimCopiedBoundaryDialogue(source,result.replacements).removedCount,0);
+        assert.equal(guard(source,[replace(source,target,value),replace(source,before,'其他前文')]).replacements[0].rewritten,value);
+    }
+});
+test('leading context guard preserves different negation and quoted source facts',()=>{
+    const before='我不想确认，“登记”',target='这个仪式是否重要。',source=before+target;
+    const value='我想确认“登记”这个仪式是否重要。';
+    assert.equal(guard(source,[replace(source,target,value)]).replacements[0].rewritten,value);
+    assert.equal(guard(value,[replace(value,value,value)]).text,value);
+});
+
+test('short quoted modifier copies with omitted linker or comma keep external text once',()=>{
+    for (const [target,tail,value,kept] of [
+        ['管理员没有追问来意，也没有表示好奇，只是将安排纳入既有的、名为','“日常”的轨道里。','管理员没有追问来意，也没有表示好奇，只是将安排纳入既有的“日常”轨道里。','管理员没有追问来意，也没有表示好奇，只是将安排纳入既有的'],
+        ['管理员的声音里带着一丝几乎可以称之为','“哄劝”的意味，“请先登记，好吗？”','管理员的声音里带着一丝“哄劝”的意味，','管理员的声音里带着一丝'],
+    ]) {
+        const source=target+tail, result=guard(source,[replace(source,target,value)]);
+        assert.equal(result.text,kept+tail);
+        assert.equal(result.removedCount,1);
+        assert.equal(trimCopiedBoundaryDialogue(source,result.replacements).removedCount,0);
+    }
+});
+
+test('quoted suffix guard preserves changed facts, punctuation, neighbors and source repetitions',()=>{
+    const target='他没有拒绝这项所谓的',tail='“日常”的安排。',source=target+tail;
+    for (const value of ['他没有拒绝“日常”安排！','他没有拒绝“日常”计划。','他没有拒绝“特殊”安排。','“日常”安排。'])
+        assert.equal(guard(source,[replace(source,target,value)]).replacements[0].rewritten,value);
+    const value='他没有拒绝“日常”安排。';
+    assert.equal(guard(source,[replace(source,target,value),replace(source,'的安排。','的计划。')]).replacements[0].rewritten,value);
+    assert.equal(guard(source+tail,[replace(source+tail,target,value)]).text,'他没有拒绝'+tail+tail);
+    assert.equal(guard(value,[replace(value,value,value)]).text,value);
+});
+
 test('synthetic internal copied name rejects only the unsafe replacement without losing its relocated fact',()=>{
     const target='面板上，有一行用激光刻下的、如今已与涂层融为一体的银色花体铭文，';
     const source=target+'“Archive”。';
@@ -230,4 +284,20 @@ test('cross-boundary removal remains conservative for changed neighbors, quoted 
     assert.equal(guard(source,[replace(source,target,'：'+quote)]).removedCount,0);
     const first=guard(source,[replace(source,target,'他回答。'+quote)]);
     assert.deepEqual(trimCopiedBoundaryDialogue(source,first.replacements),{replacements:first.replacements,removedCount:0});
+});
+
+
+test('unquoted paraphrase of a retained named term is rejected for correction',()=>{
+    const target='室内的茶香尚未散尽，构成了一种名为',tail='“日常”的、令人安心的氛围。大家收起杯子。',source=target+tail;
+    const result=guard(source,[replace(source,target,'室内的茶香尚未散尽，构成了一幅令人安心的日常图景。')]);
+    assert.equal(result.replacements[0].strategy,'boundary-dialogue-rejected');
+    assert.equal(result.text,source);
+    assert.equal(guard(source,[replace(source,target,'室内的茶香尚未散尽，形成了')]).text,'室内的茶香尚未散尽，形成了'+tail);
+});
+test('named-term guard preserves original facts and changed neighbors',()=>{
+    const target='日常工作构成了一种名为',source=target+'“日常”的氛围。';
+    assert.equal(guard(source,[replace(source,target,'日常工作形成了')]).replacements[0].strategy,undefined);
+    const t='茶香构成了一种名为',s=t+'“日常”的氛围。';
+    assert.equal(guard(s,[replace(s,t,'茶香构成日常图景。'),replace(s,'“日常”','“生活”')]).replacements[0].strategy,undefined);
+    assert.equal(guard(s,[replace(s,t,'茶香形成了')]).text,'茶香形成了“日常”的氛围。');
 });

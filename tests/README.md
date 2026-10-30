@@ -70,3 +70,6 @@ TauriTavern 路由契约测试另行运行 `npm run test:tauri`。设置 `VERIDI
 ### 修复23–26日志检查
 
 `npm test` 包含 `communication-storage.mjs`：刷新等价加载、清空、10条上限、空间不足、损坏数据及既有密钥脱敏。`npm run test:log-ui` 使用与 `test:ui` 相同的 Playwright 环境变量，验证真实页面刷新及每组复制；输出为隔离浏览器测试结果，不代表真机。最新发布代码/集成检查总数为267；完整平台复现范围见 `docs/compatibility-verification.md`。
+
+## 单项编辑浏览器验证
+`node tests/fragment-ui.mjs`（与其他 UI 脚本相同的 BLAI_TEST_MODULES / BLAI_TEST_CHROME 配置）。隔离宿主模拟保存到 localStorage，真实刷新恢复；不证明 Tauri 原生持久化。
