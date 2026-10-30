@@ -184,6 +184,9 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (guarded.removedCount && mode === 'ai') recordAiRewriteDebug('added-narration-copy-trimmed', {
         generationId: task.generationId || '', index: task.index, removedCount: guarded.removedCount,
     });
+    const unchangedCount = mode === 'ai' ? guarded.replacements.filter(item =>
+        item.strategy !== 'boundary-dialogue-rejected'
+        && item.rewritten === originalText.slice(item.start, item.end)).length : 0;
     const composition = applyResolvedReplacements(originalText, guarded.replacements);
     // Run only normal Program rules on the composition, never temporary streaming replacements.
     const programText = applyScopedCompiledReplacements(
@@ -207,7 +210,7 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (finalText === currentText && messageStagesEqual(previous, desiredStage)) {
         if (task.automatic === true) generationLifecycle.clearStreamingProgram(task.generationId);
         recordAiRewriteDebug('apply-skip', { reason: 'no-text-change', generationId: task.generationId || '' }, 'warn');
-        return { appliedCount: 0, rejectedCount: rejectedCopies.length, reason: 'no-text-change' };
+        return { appliedCount: 0, rejectedCount: rejectedCopies.length, unchangedCount, reason: 'no-text-change' };
     }
     const commitResult = commitRewriteText(task, {
         currentText,
@@ -233,7 +236,7 @@ function applyRewritePlan(task, selectedReplacements, mode) {
         beforeLength: currentText.length,
         afterLength: finalText.length,
     });
-    return { appliedCount: selectedItems.length - rejectedCopies.length, rejectedCount: rejectedCopies.length, committed: true, reason: '' };
+    return { appliedCount: selectedItems.length - rejectedCopies.length, rejectedCount: rejectedCopies.length, unchangedCount, committed: true, reason: '' };
 }
 
 export function applyAcceptedRewrites(task, accepted) {

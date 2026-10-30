@@ -1,3 +1,4 @@
+import { trimAnchoredCompletion, projectExternalReason } from './boundaryCompletion.js';
 const directQuote = String.raw`(?:“[^“”]*”|‘[^‘’]*’|「[^「」]*」|『[^『』]*』|«[^«»]*»|‹[^‹›]*›|〝[^〝〞]*〞|＂[^＂]*＂|＇[^＇]*＇|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')`;
 const leadingQuote = new RegExp('^\\s*(' + directQuote + ')', 'u');
 const trailingQuote = new RegExp('(' + directQuote + ')\\s*$', 'u');
@@ -90,6 +91,13 @@ export function trimCopiedBoundaryDialogue(sourceText, replacements) {
         // Only generated copies around an originally unquoted narration target can be removed.
         if (!original.trim() || /[“”‘’「」『』"'`<>«»‹›〝〞＂＇]/u.test(original)
             || ranges.some(range => range.start < replacement.end && replacement.start < range.end)) return replacement;
+        const reasonProjection = projectExternalReason(source, replacement, replacements);
+        const projected = reasonProjection !== rewritten ? reasonProjection
+            : trimAnchoredCompletion(source, replacement, replacements);
+        if (projected !== rewritten) {
+            removedCount++;
+            return { ...replacement, rewritten: projected, strategy: 'boundary-dialogue-trimmed' };
+        }
         // A quoted response can be the subject of the following predicate fragment.
         // Clearing that fragment leaves only “那一声…的‘…’”, not a complete sentence.
         if (!rewritten.trim() && /^[，,]/u.test(original) && /[。！？!?]\s*$/u.test(original)) {
@@ -136,6 +144,69 @@ export function trimCopiedBoundaryDialogue(sourceText, replacements) {
                 || replacements.some(other => other.start < end && start < other.end
                     && String(other.rewritten ?? '') !== source.slice(other.start, other.end))) continue;
             neighbors.push(quoteKey(neighbor[1]));
+        }
+        // A retained short quote may begin a whole action clause, not just a noun.
+        // Compare the complete terminal tail, allowing comma/space changes only.
+        if (!/[，,。！？!?；;：:]\s*$/u.test(original)) {
+            const following = source.slice(replacement.end);
+            const anchor = following.match(leadingQuote);
+            if (anchor && /^[\p{L}\p{N}]{1,12}$/u.test(anchor[1].slice(1, -1)) && neighbors.includes(quoteKey(anchor[1]))) {
+                const tail = following.slice(anchor[0].length).match(/^[^。！？!?\r\n“”"<>`]{1,200}[。！？!?]/u);
+                if (tail) {
+                    const end = replacement.end + anchor[0].length + tail[0].length;
+                    const normalize = value => value.replace(/[，,\s]/gu, '');
+                    const copyStart = rewritten.lastIndexOf(anchor[1]);
+                    const kept = rewritten.slice(0, copyStart);
+                    if (copyStart > 0 && protectedRanges(rewritten).some(range => range.start === copyStart && range.end === copyStart + anchor[1].length)
+                        && /[\p{L}\p{N}]$/u.test(kept)
+                        && normalize(rewritten.slice(copyStart)) === normalize(anchor[1] + tail[0])
+                        && !replacements.some(other => other !== replacement && other.start < end && other.end > replacement.end
+                            && String(other.rewritten ?? '') !== source.slice(other.start, other.end))) {
+                        rewritten = kept;
+                        removedCount++;
+                        trimmed = true;
+                    }
+                }
+            }
+        }
+        // A nominal subject immediately before the retained quote can be copied
+        // together with it. Remove only an exact, unchanged source prefix.
+        const preceding = source.slice(0, replacement.start);
+        const previousQuote = preceding.match(trailingQuote);
+        if (previousQuote && neighbors.includes(quoteKey(previousQuote[1]))) {
+            const quoteStart = previousQuote.index + previousQuote[0].indexOf(previousQuote[1]);
+            const nominal = preceding.slice(0, quoteStart).match(/(?:^|[。！？!?\n])\s*((?:那|这)句(?:[^。！？!?，,；;：:\n“”「」"]{1,80}的)?)\s*$/u);
+            if (nominal) {
+                const start = nominal.index + nominal[0].indexOf(nominal[1]);
+                const copied = source.slice(start, replacement.start);
+                const remainder = rewritten.startsWith(copied) ? rewritten.slice(copied.length) : '';
+                if (rewritten.startsWith(copied) && !/[\p{L}\p{N}]/u.test(remainder)) {
+                    return { ...replacement, rewritten: original, strategy: 'boundary-dialogue-rejected' };
+                }
+                if (/[\p{L}\p{N}]/u.test(remainder)
+                    && !replacements.some(other => other !== replacement && other.start < replacement.start && other.end > start
+                        && String(other.rewritten ?? '') !== source.slice(other.start, other.end))) {
+                    rewritten = remainder;
+                    removedCount++;
+                    trimmed = true;
+                }
+            }
+        }
+        // An unfinished final clause can acquire a paraphrased object from the
+        // retained quote. Require the same clause anchor and a shared term stem;
+        // the preserved clause anchor fixes the splice without another request.
+        const openClause = original.match(/[，,]([^，,。！？!?；;\n]{2,8})$/u)?.[1];
+        const nextTerm = source.slice(replacement.end).match(leadingQuote)?.[1];
+        if (openClause && nextTerm && neighbors.includes(quoteKey(nextTerm))) {
+            const term = nextTerm.slice(1, -1);
+            const lastComma = Math.max(rewritten.lastIndexOf('，'), rewritten.lastIndexOf(','));
+            const lastClause = rewritten.slice(lastComma + 1);
+            const added = lastClause.startsWith(openClause) ? lastClause.slice(openClause.length) : '';
+            if (/^[\p{L}]{3,12}$/u.test(term) && added.startsWith(term.slice(0, 2))
+                && /^[\p{L}]{3,16}[。！？!?]$/u.test(added)) {
+                removedCount++;
+                return { ...replacement, rewritten: rewritten.slice(0, rewritten.length - added.length), strategy: 'boundary-dialogue-trimmed' };
+            }
         }
         // A model may copy either adjacent quote to either end of a narration target.
         for (const isStart of [true, false]) {

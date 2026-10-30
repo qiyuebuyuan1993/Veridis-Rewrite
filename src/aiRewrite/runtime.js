@@ -10,7 +10,6 @@ import { getCurrentChatIdentity } from '../host/context.js';
 import { generationLifecycle } from '../host/generationLifecycle.js';
 import { AiRewriteRequestFormatError, isAiRewriteRequestFormatError, isBadRequestError, requestAiRewrite, getAiRewriteTransport } from './generation.js';
 import { recordAiRewriteDebug } from './debug.js';
-import { getBoundaryRepairItems, repairBoundaryCopies } from './boundaryRepair.js';
 import {
     getAiSettings,
     getAiConfigIssue,
@@ -403,6 +402,15 @@ function finishAiRewriteApply(task, accepted) {
         notifyAiRewriteStatus('warning', '部分目标未完成清理', `已应用 ${appliedCount} 项；${applyResult.rejectedCount} 项仍有回抄风险，保留原文。`, { timeOut: 8000 });
         return { status: 'partial', applyResult };
     }
+    if (applyResult.unchangedCount > 0) {
+        recordAiRewriteDebug('run-unchanged-targets', {
+            generationId: task.generationId || '',
+            unchangedCount: applyResult.unchangedCount,
+        }, 'warn');
+        notifyAiRewriteStatus('warning', '部分目标未产生修改',
+            `有 ${applyResult.unchangedCount} 项保持原文；请检查是否属于规则例外，不能据此确认清理完成。`, { timeOut: 8000 });
+        return { status: 'unchanged-targets', applyResult };
+    }
     if (appliedCount > 0) {
         recordAiRewriteDebug('run-success', {
             generationId: task.generationId || '',
@@ -431,7 +439,7 @@ function finishAiRewriteApply(task, accepted) {
         acceptedCount: accepted.size,
         reason: 'no-text-change',
     });
-    notifyAiRewriteStatus('success', 'AI 改写成功', formatAiRewriteCompletionMessage(task, '没有新的文本变更需要写入'), { timeOut: 5000 });
+    notifyAiRewriteStatus('warning', 'AI 未产生新修改', formatAiRewriteCompletionMessage(task, '没有新的文本变更需要写入；请检查清理结果'), { timeOut: 5000 });
     return { status: 'no-change', applyResult };
 }
 
@@ -1012,23 +1020,9 @@ async function requestAcceptedRewritesOnce(task, rewriteState, attempt, maxAttem
                 recordAiRewriteDebug('request-stale-after-fetch', { generationId: task.generationId || '', reason: freshnessIssue }, 'warn');
                 return { stale: true, accepted };
             }
-            const groupAccepted = parseAiResponse(rawResponse, new Map(group.items.map((item) => [item.id, item])));
-            const repairItems = getBoundaryRepairItems(task, group.items, groupAccepted);
-            task.boundaryRepairGroups ??= new Set();
-            if (repairItems.length && !task.boundaryRepairGroups.has(group.key)) {
-                task.boundaryRepairGroups.add(group.key);
-                recordAiRewriteDebug('boundary-repair-start', { generationId: task.generationId || '', count: repairItems.length });
-                try {
-                    const repairedCount = await repairBoundaryCopies(task, group, groupAccepted,
-                        prompt => requestAiRewrite(prompt, task.aiSettings, controller.signal, task));
-                    recordAiRewriteDebug('boundary-repair-result', { repairedCount, requestedCount: repairItems.length });
-                } catch (error) {
-                    if (controller.signal.aborted) throw error;
-                    recordAiRewriteDebug('boundary-repair-failed', { reason: error?.message || 'request-failed' }, 'warn');
-                }
-                const issue = getTaskFreshnessIssue(task);
-                if (issue) return { stale: true, accepted };
-            }
+            const itemById = new Map(group.items.map((item) => [item.id, item]));
+            // Response validation failures never spend another model request.
+            const groupAccepted = parseAiResponse(rawResponse, itemById);
             groupAccepted.forEach((value, key) => accepted.set(key, value));
             completedGroupKeys.add(group.key);
         } catch (err) {
