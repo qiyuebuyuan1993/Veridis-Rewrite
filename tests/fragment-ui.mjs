@@ -106,6 +106,18 @@ try {
  await page.locator('#blai-diff-modal-content ins[data-blai-diff-section="program"]').last().click();
  await page.evaluate(()=>fixture.chat[0].mes='外部编辑');await page.locator('#blai-fragment-save').click();
  assert.equal(await page.evaluate(()=>fixture.chat[0].mes),'外部编辑');assert.match(await page.locator('#blai-fragment-status').innerText(),/未保存/);check('stale save blocked');
+ await page.locator('#blai-diff-related-close').click();
+ page.once('dialog',d=>d.dismiss());
+ await page.locator('#blai-diff-revert-toggle').click();
+ assert.equal(await page.evaluate(()=>fixture.chat[0].mes),'外部编辑');check('external edit undo cancelled');
+ page.once('dialog',d=>d.accept());
+ await page.locator('#blai-diff-revert-toggle').click();
+ assert.equal(await page.evaluate(()=>fixture.chat[0].mes),'旧。旧。');
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('testChat')||'[]')[0]?.mes==='旧。旧。');
+ await page.reload();await page.waitForFunction(()=>window.fixture?.ready);await page.locator('#test-open').click();
+ await page.locator('#blai-diff-revert-toggle').click();
+ assert.equal(await page.evaluate(()=>fixture.chat[0].mes),'外部编辑');
+ assert.deepEqual(await page.evaluate(()=>fixture.chat[0].swipes),['外部编辑','其他']);check('external edit undo reload restore');
  assert.deepEqual(errors,[]);
 } finally {fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({results,errors},null,2));await browser.close();server.close();}
 
