@@ -1,8 +1,24 @@
 const directQuote = String.raw`(?:“[^“”]*”|‘[^‘’]*’|「[^「」]*」|『[^『』]*』|«[^«»]*»|‹[^‹›]*›|〝[^〝〞]*〞|＂[^＂]*＂|＇[^＇]*＇|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')`;
 const leadingQuote = new RegExp('^\\s*(' + directQuote + ')', 'u');
 const trailingQuote = new RegExp('(' + directQuote + ')\\s*$', 'u');
-const trailingQuoteWithStop = new RegExp('(' + directQuote + ')([\\p{L}]{0,13}[。！？!?]+)\\s*$', 'u');
+const trailingQuoteWithStop = new RegExp('(' + directQuote + ')([\\p{L}]{0,13}[，,。！？!?]+)\\s*$', 'u');
 const quoteKey = value => value.replace(/\s|…|\.{3,}/gu, '');
+
+function trimCopiedLeadingContext(source, replacement, replacements, rewritten) {
+    const prefix = rewritten.match(new RegExp('^([\\p{L}]{0,24})(' + directQuote + '(?:[和与、]' + directQuote + ')*)', 'u'));
+    if (!prefix || !/[\p{L}]/u.test(rewritten.slice(prefix[0].length))) return rewritten;
+    const quotes = [...prefix[2].matchAll(new RegExp(directQuote, 'gu'))];
+    if (quotes.some(q => !/^[\p{L}\p{N}]{1,12}$/u.test(q[0].slice(1,-1)))) return rewritten;
+    // A bare single quote is handled separately, including its noun-link protection.
+    if (!prefix[1] && quotes.length < 2) return rewritten;
+    const before = source.slice(0, replacement.start);
+    const anchor = before.match(new RegExp('(' + (prefix[1] ? '[\\p{L}，,]{1,26}' : '') + directQuote + '(?:[和与、]' + directQuote + ')*)\\s*$', 'u'));
+    if (!anchor || anchor[1].replace(/[，,]/gu,'') !== prefix[0]) return rewritten;
+    const start = anchor.index;
+    if (replacements.some(other => other !== replacement && other.start < replacement.start && other.end > start
+        && String(other.rewritten ?? '') !== source.slice(other.start,other.end))) return rewritten;
+    return rewritten.slice(prefix[0].length);
+}
 
 function trimSubjectAcrossSound(source, replacement, replacements, ranges, rewritten) {
     const original = source.slice(replacement.start, replacement.end);
@@ -74,7 +90,37 @@ export function trimCopiedBoundaryDialogue(sourceText, replacements) {
         // Only generated copies around an originally unquoted narration target can be removed.
         if (!original.trim() || /[“”‘’「」『』"'`<>«»‹›〝〞＂＇]/u.test(original)
             || ranges.some(range => range.start < replacement.end && replacement.start < range.end)) return replacement;
-        const subjectTrimmed = trimSubjectAcrossSound(source, replacement, replacements, ranges, rewritten);
+        // A quoted response can be the subject of the following predicate fragment.
+        // Clearing that fragment leaves only “那一声…的‘…’”, not a complete sentence.
+        if (!rewritten.trim() && /^[，,]/u.test(original) && /[。！？!?]\s*$/u.test(original)) {
+            const before = source.slice(0, replacement.start), quote = before.match(trailingQuote);
+            if (quote) {
+                const quoteStart = quote.index + quote[0].indexOf(quote[1]);
+                const nominal = before.slice(0, quoteStart).match(/(?:^|[。！？!?\n])\s*((?:那|这)?一声[^。！？!?，,\n]{0,30}的)\s*$/u);
+                if (nominal && ranges.some(range => range.start === quoteStart && range.end === quoteStart + quote[1].length)
+                    && !replacements.some(other => other !== replacement && other.start < replacement.start && other.end > quoteStart
+                        && String(other.rewritten ?? '') !== source.slice(other.start, other.end)))
+                    return { ...replacement, rewritten: original, strategy: 'boundary-dialogue-rejected' };
+            }
+        }
+        // A naming fragment must not absorb the retained term by removing its quotes.
+        // Reject for bounded correction; cutting a paraphrase cannot preserve syntax reliably.
+        if (/(?:名为|称之为|称为|叫作|叫做)\s*$/u.test(original)) {
+            const following = source.slice(replacement.end), quote = following.match(leadingQuote);
+            const term = quote?.[1].slice(1, -1);
+            if (term && /^[\p{L}\p{N}]{2,12}$/u.test(term) && !original.includes(term)
+                && rewritten.includes(term) && !protectedRanges(rewritten).some(range => rewritten.slice(range.start, range.end).includes(term))) {
+                const start = replacement.end + quote[0].indexOf(quote[1]);
+                const end = start + quote[1].length;
+                if (ranges.some(range => range.start === start && range.end === end)
+                    && !replacements.some(other => other !== replacement && other.start < end && other.end > replacement.end
+                        && String(other.rewritten ?? '') !== source.slice(other.start, other.end)))
+                    return { ...replacement, rewritten: original, strategy: 'boundary-dialogue-rejected' };
+            }
+        }
+        const leadingTrimmed = trimCopiedLeadingContext(source, replacement, replacements, rewritten);
+        const subjectTrimmed = leadingTrimmed !== rewritten ? leadingTrimmed
+            : trimSubjectAcrossSound(source, replacement, replacements, ranges, rewritten);
         const completed = subjectTrimmed !== rewritten ? subjectTrimmed
             : trimCompletedQuotedTerm(source, replacement, replacements, ranges);
         let trimmed = completed !== rewritten;
@@ -103,9 +149,15 @@ export function trimCopiedBoundaryDialogue(sourceText, replacements) {
                         const following = source.slice(replacement.end);
                         const anchor = following.match(leadingQuote);
                         const stop = punctuated[2];
-                        const end = replacement.end + (anchor?.[0].length || 0) + stop.length;
+                        const suffix = following.slice(anchor?.[0].length || 0);
+                        // A short quoted modifier may lose its linking 的 in the copy.
+                        // Match the whole retained suffix, not an arbitrary similar noun.
+                        const omittedLink = anchor && /^[\p{L}\p{N}]{1,12}$/u.test(anchor[1].slice(1, -1))
+                            && /^[\p{L}]{1,12}[，,。！？!?]+$/u.test(stop)
+                            && !stop.startsWith('的') && suffix.startsWith('的' + stop);
+                        const end = replacement.end + (anchor?.[0].length || 0) + stop.length + (omittedLink ? 1 : 0);
                         if (anchor && quoteKey(anchor[1]) === quoteKey(punctuated[1])
-                            && following.slice(anchor[0].length).startsWith(stop)
+                            && (suffix.startsWith(stop) || omittedLink)
                             && !replacements.some(other => other !== replacement && other.start < end
                                 && other.end > replacement.end && String(other.rewritten ?? '') !== source.slice(other.start, other.end))) copy = punctuated;
                     }
@@ -117,6 +169,11 @@ export function trimCopiedBoundaryDialogue(sourceText, replacements) {
                 let remaining = isStart ? rewritten.slice(copy[0].length) : rewritten.slice(0, copy.index);
                 // Do not detach a quoted modifier from its noun (e.g. “确认”的印记).
                 if (isStart && /^\s*的/u.test(remaining)) break;
+                if (isStart && /^[\p{L}\p{N}]{1,12}$/u.test(copy[1].slice(1, -1))) {
+                    const following = source.slice(replacement.end), anchor = following.match(leadingQuote);
+                    if (anchor && quoteKey(anchor[1]) === quoteKey(copy[1])
+                        && following.slice(anchor[0].length).startsWith('的' + remaining)) break;
+                }
                 if (!isStart) {
                     if (!/[:：]\s*$/u.test(original)) remaining = remaining.replace(/[ \t]*(?:[:：]\s*)+$/u, '');
                     const ending = original.match(/[，,。.!！?？；;：:]\s*$/u)?.[0].trim();
