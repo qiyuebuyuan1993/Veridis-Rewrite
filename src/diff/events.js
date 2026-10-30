@@ -19,7 +19,7 @@ import { omitVariableUpdates } from '../text/variableUpdates.js';
 import { renderDiffDocumentInBackground } from './background.js';
 import { collectAiXmlScopeSegments } from '../aiRewrite/matching.js';
 import { clearMessageDisplayText, commitCurrentMessageText, getMessageDiffBranchKey, syncCurrentSwipeExtra } from '../chat/messageBranch.js';
-import { getMessageDiffMeta, isMessageDiffReverted, setMessageDiffReverted, restoreMessageDiffResult } from './messageMeta.js';
+import { getMessageDiffMeta, isMessageDiffReverted, setMessageDiffReverted, restoreMessageDiffResult, writeMessageDiffAiStage } from './messageMeta.js';
 import { findRelatedRulesForDiffChange } from './relatedRules.js';
 import { requestManualAiRewriteForMessage } from '../aiRewrite/index.js';
 
@@ -256,7 +256,7 @@ export function bindDiffEvents() {
         const revertTitle = isReverted ? '恢复上次净化结果（不请求 AI）' : '撤回净化并保护原文';
         $('#blai-diff-revert-icon').attr('class', isReverted ? 'fas fa-rotate-right' : 'fas fa-rotate-left');
         $('#blai-diff-revert-text').text(isReverted ? '恢复上次结果' : '撤回净化');
-        $('#blai-diff-revert-toggle').attr('title', revertTitle).prop('disabled', !meta || msg.mes !== (isReverted ? meta.originalMes : meta.programMes));
+        $('#blai-diff-revert-toggle').attr('title', revertTitle).prop('disabled', !meta || typeof msg.mes !== 'string' || (isReverted && msg.mes !== meta.originalMes));
         $('#blai-diff-mode-toggle').toggle(!isReverted);
     };
 
@@ -285,15 +285,23 @@ export function bindDiffEvents() {
         } else {
             const branchKey = getMessageDiffBranchKey(msg);
             const diffMeta = getMessageDiffMeta(msg, branchKey);
-            if (!diffMeta || msg.mes !== diffMeta.programMes) {
-                return;
+            if (!diffMeta || typeof msg.mes !== 'string') return;
+            const currentText = msg.mes;
+            const chat = getAppContext().chat;
+            if (currentText !== diffMeta.programMes) {
+                if (!confirm('正文已手动修改。撤回会暂时移除净化及手动修改，回到净化前原文。\n当前完整正文会保存为上次结果，可通过“恢复上次结果”一起找回。\n确定撤回吗？')) return;
             }
+            // A host may change the selected chat or branch while confirmation is open.
+            if (getAppContext().chat !== chat || getDiffMessageByIndex(index) !== msg
+                || getCurrentDiffIndex() !== index || getMessageDiffBranchKey(msg) !== branchKey
+                || msg.mes !== currentText || JSON.stringify(getMessageDiffMeta(msg, branchKey)) !== JSON.stringify(diffMeta)) return;
             const commitResult = commitCurrentMessageText(msg, diffMeta.originalMes, branchKey);
             if (!commitResult.ok) {
                 return;
             }
             clearMessageDisplayText(msg);
             syncCurrentSwipeExtra(msg);
+            writeMessageDiffAiStage(msg, branchKey, diffMeta.originalMes, diffMeta.aiMes, currentText);
             setMessageDiffReverted(msg, true, branchKey);
             markHostChatDirtyFromIndex(index);
         }
