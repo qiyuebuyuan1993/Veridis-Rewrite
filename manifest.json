@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Veridis",
-    "version": "3.5.0-fix.36",
+    "version": "3.5.0-fix.37",
     "description": "在关键词净化基础上增加可选 OpenAI 兼容局部改写。",
-    "update_note": "本地修复36：保留原预设格式；本地裁剪已确认的半句补全回抄，保留目标内清理与目标外原文；不追加格式或边界纠正请求。详见 CHANGELOG.md。"
+    "update_note": "修复37：前文透视按正文顺序以琥珀色标记 AI 未修改片段；补充引用后动作移位与解释回抄检查。无新增模型重试。"
 }
