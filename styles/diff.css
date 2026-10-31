@@ -552,3 +552,12 @@
     align-items: center !important;
     justify-content: center !important;
 }}
+#blai-diff-modal .blai-diff-legend-item[data-source="unchanged"] i { background: #bc8527; }
+#blai-diff-modal mark.blai-diff-ai-unchanged {
+    background: rgba(188, 133, 39, .22);
+    color: inherit;
+    border-bottom: 2px dotted #bc8527;
+    border-radius: 3px;
+    padding: 0;
+    text-decoration: none;
+}
