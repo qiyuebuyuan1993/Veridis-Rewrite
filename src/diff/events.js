@@ -301,7 +301,7 @@ export function bindDiffEvents() {
             }
             clearMessageDisplayText(msg);
             syncCurrentSwipeExtra(msg);
-            writeMessageDiffAiStage(msg, branchKey, diffMeta.originalMes, diffMeta.aiMes, currentText);
+            writeMessageDiffAiStage(msg, branchKey, diffMeta.originalMes, diffMeta.aiMes, currentText, diffMeta.aiUnchanged);
             setMessageDiffReverted(msg, true, branchKey);
             markHostChatDirtyFromIndex(index);
         }

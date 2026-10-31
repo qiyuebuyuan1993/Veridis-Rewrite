@@ -30,6 +30,7 @@ export function getMessageDiffMeta(msg, branchKey = getMessageDiffBranchKey(msg)
         aiMes: entry.aiMes,
         programMes: entry.programMes,
         reverted: entry.reverted,
+        ...(Array.isArray(entry.aiUnchanged) && entry.aiUnchanged.length ? { aiUnchanged: entry.aiUnchanged } : {}),
     } : null;
 }
 
@@ -38,7 +39,7 @@ function writeBranchMeta(msg, branchKey, next) {
     if (!isCanonical(next)) throw new TypeError('Difference requires canonical stage texts and revert state');
     const previous = getMessageDiffMeta(msg, branchKey);
     const clearsMessageProtection = !next.reverted && isProtectionOnly(msg[branchMetaKey]?.[messageProtectionKey]);
-    if (!clearsMessageProtection && previous && Object.keys(next).every(key => previous[key] === next[key])) return false;
+    if (!clearsMessageProtection && previous && JSON.stringify(previous) === JSON.stringify(next)) return false;
     if (!isObject(msg[branchMetaKey])) msg[branchMetaKey] = {};
     msg[branchMetaKey][branchKey] = next;
     // Explicit recleanse releases the legacy message-wide choice after a successful commit.
@@ -50,8 +51,9 @@ export function writeMessageDiffProgram(msg, branchKey, originalMes, programMes)
     return writeBranchMeta(msg, branchKey, { originalMes, aiMes: null, programMes, reverted: false });
 }
 
-export function writeMessageDiffAiStage(msg, branchKey, originalMes, aiMes, programMes) {
-    return writeBranchMeta(msg, branchKey, { originalMes, aiMes, programMes, reverted: false });
+export function writeMessageDiffAiStage(msg, branchKey, originalMes, aiMes, programMes, aiUnchanged = []) {
+    return writeBranchMeta(msg, branchKey, { originalMes, aiMes, programMes, reverted: false,
+        ...(aiUnchanged.length ? { aiUnchanged } : {}) });
 }
 
 export function setMessageDiffReverted(msg, reverted, branchKey = getMessageDiffBranchKey(msg)) {

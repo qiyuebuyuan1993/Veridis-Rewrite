@@ -24,7 +24,7 @@ export function applyFragmentEdit(chat, draft, value) {
     const next = draft.text.slice(0, draft.newStart) + value + draft.text.slice(draft.newEnd);
     if (!commitCurrentMessageText(msg, next, branch).ok) return false;
     // Keep original and AI provenance; user edits become the final stage.
-    writeMessageDiffAiStage(msg, branch, meta.originalMes, meta.aiMes, next);
+    writeMessageDiffAiStage(msg, branch, meta.originalMes, meta.aiMes, next, meta.aiUnchanged);
     clearMessageDisplayText(msg);
     syncCurrentSwipeExtra(msg);
     return true;
