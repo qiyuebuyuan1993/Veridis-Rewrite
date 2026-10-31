@@ -47,7 +47,8 @@ function messageStagesEqual(left, right) {
     return left.originalMes === right.originalMes
         && left.programMes === right.programMes
         && left.aiMes === right.aiMes
-        && left.reverted === right.reverted;
+        && left.reverted === right.reverted
+        && JSON.stringify(left.aiUnchanged || []) === JSON.stringify(right.aiUnchanged || []);
 }
 
 function commitRewriteText(taskLike, prepared, mode) {
@@ -84,7 +85,7 @@ function commitRewriteText(taskLike, prepared, mode) {
         syncCurrentSwipeExtra(msg);
 
         const metadataChanged = mode === 'ai'
-            ? writeMessageDiffAiStage(msg, branchKey, originalText, aiText, programText)
+            ? writeMessageDiffAiStage(msg, branchKey, originalText, aiText, programText, prepared.aiUnchanged)
             : writeMessageDiffProgram(msg, branchKey, originalText, programText);
         maintainDiffRetention();
         refreshDiffViewer(index);
@@ -184,6 +185,11 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (guarded.removedCount && mode === 'ai') recordAiRewriteDebug('added-narration-copy-trimmed', {
         generationId: task.generationId || '', index: task.index, removedCount: guarded.removedCount,
     });
+    const aiUnchanged = mode === 'ai' ? guarded.replacements
+        .filter(item => item.strategy === 'boundary-dialogue-rejected'
+            || item.rewritten === originalText.slice(item.start, item.end))
+        .map(item => ({ start: item.start, end: item.end,
+            reason: item.strategy === 'boundary-dialogue-rejected' ? 'boundary-risk' : 'unchanged' })) : [];
     const unchangedCount = mode === 'ai' ? guarded.replacements.filter(item =>
         item.strategy !== 'boundary-dialogue-rejected'
         && item.rewritten === originalText.slice(item.start, item.end)).length : 0;
@@ -204,6 +210,7 @@ function applyRewritePlan(task, selectedReplacements, mode) {
         aiMes: mode === 'ai' ? composition.text : null,
         programMes: programText,
         reverted: false,
+        ...(aiUnchanged.length ? { aiUnchanged } : {}),
     };
     // External tail text belongs only to the live message, never to the stage chain.
     const finalText = (trimProgramEnd ? programText.trimEnd() : programText) + preservedTail;
@@ -219,6 +226,7 @@ function applyRewritePlan(task, selectedReplacements, mode) {
         programText,
         finalText,
         previousMeta: previous,
+        aiUnchanged,
     }, mode);
     if (!commitResult.committed) {
         recordAiRewriteDebug('apply-skip', { reason: commitResult.reason, generationId: task.generationId || '' }, 'warn');

@@ -20,13 +20,35 @@ export function trimAnchoredCompletion(source, replacement, replacements) {
     if (replacements.some(other => other !== replacement && other.start < replacement.end + context.length
         && other.end > replacement.end && String(other.rewritten ?? '') !== source.slice(other.start, other.end))) return value;
     const contextKey = letters(context);
+    // The model can move the original predicate behind a copied quoted object:
+    // “这些话冲破了他名为” + “顾虑”的围墙 -> “这些话让他名为‘顾虑’的围墙冲破”.
+    // Reuse only a predicate proven verbatim in the original target, never infer one.
+    const quote = context.match(/^(“[^”]+”|「[^」]+」|『[^』]+』|"[^"]+")([^。！？!?\r\n]*)[。！？!?]/u);
+    if (quote) {
+        const copiedObject = quote[1] + quote[2];
+        const at = value.indexOf(copiedObject);
+        const before = value.slice(0, at);
+        const after = value.slice(at + copiedObject.length).replace(/[。！？!?]$/u, '');
+        const causative = before.lastIndexOf('让');
+        const objectPrefix = before.slice(causative + 1);
+        if (at > 0 && at === value.lastIndexOf(copiedObject) && causative > 0
+            && after.length >= 2 && objectPrefix.length >= 4
+            && original.endsWith(after + '了' + objectPrefix)) {
+            return before.slice(0, causative) + after + '了' + objectPrefix;
+        }
+    }
     const terminal = original.match(/[\p{L}\p{N}]+$/u)?.[0] || '';
     for (let length = Math.min(24, terminal.length); length >= 2; length--) {
         const anchor = terminal.slice(-length);
         const position = value.indexOf(anchor);
         if (position < 2 || position !== value.lastIndexOf(anchor)) continue;
         const added = letters(value.slice(position + anchor.length));
-        if (added.length < 6 || !isSubsequence(added, contextKey)) continue;
+        const quotedTail = quote && value.slice(position + anchor.length).startsWith(quote[1]);
+        // Only normalize a sentence-leading 这是/那是 in a proven quoted continuation.
+        const addedComparable = letters(value.slice(position + anchor.length).replace(/([。！？!?，,])这是/gu, '$1那是'));
+        const contextComparable = letters(context.replace(/([。！？!?，,])这是/gu, '$1那是'));
+        if (added.length < 6 || !(isSubsequence(added, contextKey)
+            || (quotedTail && isSubsequence(addedComparable, contextComparable)))) continue;
         // A repeated fragment of the target after the seam can carry moved original
         // information. Leave that case to the existing explicit rejection path.
         const originalKey = letters(original.slice(0, -length));
