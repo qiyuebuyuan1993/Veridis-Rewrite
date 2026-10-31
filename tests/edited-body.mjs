@@ -541,3 +541,20 @@ for (const streamingEnabled of [false,true]) test(`recorded quoted completions r
   h.assertUntouched();
  }
 });
+test('unchanged AI targets persist even with no body changes and clear on a later clean result', () => {
+    const h = harness('string', '他极其认真。');
+    const task = h.build();
+    const reply = new Map(task.items.map(item => [item.id, item.text]));
+    const result = applyAcceptedRewrites(task, reply);
+    assert.equal(result.unchangedCount, 1);
+    assert.equal(h.meta().aiUnchanged.length, 1);
+    const range = h.meta().aiUnchanged[0];
+    assert.equal(h.meta().originalMes.slice(range.start, range.end), '他极其认真。');
+    assert.equal(range.reason, 'unchanged');
+    assert.deepEqual(getMessageDiffMeta(JSON.parse(JSON.stringify(h.msg))).aiUnchanged, h.meta().aiUnchanged);
+    h.assertUntouched();
+    const next = h.build();
+    applyAcceptedRewrites(next, new Map(next.items.map(item => [item.id, '他认真。'])));
+    assert.equal(h.meta().aiUnchanged, undefined);
+    assert.equal(h.msg.mes, '他认真。');
+});

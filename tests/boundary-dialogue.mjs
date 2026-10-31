@@ -368,3 +368,20 @@ test('external cause projection preserves the original negative fact and complet
  const changed=guard(target+tail,[replace(target+tail,target,value),replace(target+tail,tail,'为了别的原因。')]);
  assert.equal(changed.replacements[0].rewritten,value);
 });
+test('quoted object completion with a relocated proven predicate keeps target cleanup', () => {
+    const target='这些词组合在一起，形成了洪流，瞬间冲垮了他心中最后一道名为';
+    const tail='“顾虑”的堤坝。';
+    const value='这些词组合在一起，让他心中最后一道名为“顾虑”的堤坝瞬间冲垮。';
+    const result=guard(target+tail,[replace(target+tail,target,value)]);
+    assert.equal(result.text,'这些词组合在一起，瞬间冲垮了他心中最后一道名为'+tail);
+    assert.doesNotMatch(result.text,/洪流/);
+    assert.equal(result.replacements[0].strategy,'boundary-dialogue-trimmed');
+});
+test('anchored quote plus following explanation permits sentence demonstrative variation only', () => {
+    const target='同伴的存在，非但没有削弱他的地位，反而是在以另一种方式，巩固他作为这个团队';
+    const tail='“负责人”的权力。因为同伴是你通过他，才纳入这个团队的。那是你给予他的、协调成员的权力。';
+    const value='同伴的存在巩固了他作为这个团队“负责人”的权力，因为同伴是你通过他纳入这个团队的，这是你给予他的权力。';
+    const result=guard(target+tail,[replace(target+tail,target,value)]);
+    assert.equal(result.text,'同伴的存在巩固了他作为这个团队'+tail);
+    assert.equal(result.replacements[0].strategy,'boundary-dialogue-trimmed');
+});

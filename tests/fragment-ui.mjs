@@ -57,7 +57,7 @@ const {extensionName,defaultSettings}=await import('/src/settings/defaults.js');
 const meta=await import('/src/diff/messageMeta.js');
 const chat=JSON.parse(localStorage.getItem('testChat')||'null')||[{mes:'好。好。',swipe_id:0,swipes:['好。好。','其他'],extra:{}}];
 if(!localStorage.getItem('testChat'))meta.writeMessageDiffAiStage(chat[0],'swipe:0','旧。旧。','好。好。','好。好。');
-window.fixture={chat,saves:0};
+window.fixture={chat,saves:0,meta};
 const settings=structuredClone(defaultSettings);settings.diffViewMode='full';settings.logLevel=0;
 const context={chat,updateMessageBlock:()=>{},saveChat:async()=>{localStorage.setItem('testChat',JSON.stringify(chat));fixture.saves++}};
 initAppContext({chat,extension_settings:{[extensionName]:settings},saveSettingsDebounced:()=>{},saveChat:context.saveChat,getSillyTavernContext:()=>context});
@@ -118,6 +118,22 @@ try {
  await page.locator('#blai-diff-revert-toggle').click();
  assert.equal(await page.evaluate(()=>fixture.chat[0].mes),'外部编辑');
  assert.deepEqual(await page.evaluate(()=>fixture.chat[0].swipes),['外部编辑','其他']);check('external edit undo reload restore');
+ await page.reload();await page.waitForFunction(()=>window.fixture?.ready);
+ await page.evaluate(()=>{
+  const text='开头。保持原文。结尾。';fixture.chat[0].mes=text;fixture.chat[0].swipes[0]=text;
+  fixture.meta.writeMessageDiffAiStage(fixture.chat[0],'swipe:0',text,text,text,[{start:3,end:8,reason:'unchanged'}]);
+ });
+ await page.locator('#test-open').click();
+ await page.locator('#blai-diff-modal-content mark.blai-diff-ai-unchanged').waitFor();
+ assert.equal(await page.locator('#blai-diff-modal-content mark').innerText(),'保持原文。');
+ assert.match(await page.locator('#blai-diff-modal-content mark').getAttribute('title'),/规则例外/);
+ assert.equal(await page.locator('.blai-diff-unchanged-item').count(),0);
+ await page.screenshot({path:path.join(output,'inline-amber.png')});check('unchanged target appears inline in original order');
+ await page.locator('#blai-diff-revert-toggle').click();await page.locator('#blai-diff-revert-toggle').click();
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('testChat')||'[]')[0]?.mes==='开头。保持原文。结尾。');
+ await page.reload();await page.waitForFunction(()=>window.fixture?.ready);await page.locator('#test-open').click();
+ await page.locator('#blai-diff-modal-content mark.blai-diff-ai-unchanged').waitFor();
+ assert.equal(await page.locator('#blai-diff-modal-content mark').innerText(),'保持原文。');check('inline amber survives undo restore and reload');
  assert.deepEqual(errors,[]);
 } finally {fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({results,errors},null,2));await browser.close();server.close();}
 
