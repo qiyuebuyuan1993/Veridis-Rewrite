@@ -4,6 +4,11 @@
 
 原作者：[The-Veridis-Lion](https://github.com/The-Veridis-Lion)。原项目：[GitHub](https://github.com/The-Veridis-Lion/Veridis-Rewrite) / [Discord](https://discord.com/channels/1134557553011998840/1488671923776000020)。本修改版继续遵守 README 中完整保留的[许可与版权](README.md#许可与版权)，仅供非商业使用。
 
+## 2026-10-31：修复36发布文件补全
+
+- 补齐 GitHub 发布时遗漏的 `src/aiRewrite/localEdits.js`。缺失静态导入依赖会导致原生酒馆与 TauriTavern 无法加载扩展入口；本次不修改预设、接口配置或改写规则。
+- 补齐对应测试，新增发布目录依赖完整性检查，检查实际发布文件集合而非仅检查工作目录中已有文件。
+
 ## 2026-10-30：本地修复36（无追加纠正请求）
 
 - 保留原预设的 id → 字符串返回格式及清理规则；不启用保护标记试验，不扩大实际写回范围。
