@@ -123,8 +123,12 @@
                                                     <label class="blai-ai-control"><span class="blai-ai-control-label">连接配置</span><select id="blai-ai-manager-entry" class="blai-input"><option value="">请先读取配置</option></select></label>
                                                     <button type="button" id="blai-ai-manager-import" class="blai-home-toolbar-button" disabled>填入词汇映射</button>
                                                     <hr>
-                                                    <label class="blai-ai-control"><span class="blai-ai-control-label">要保存到管理器的 API</span><select id="blai-ai-manager-source" class="blai-input"></select></label>
                                                     <label class="blai-ai-control"><span class="blai-ai-control-label">目标分组（可填写新名称）</span><input id="blai-ai-manager-target" class="blai-input" list="blai-ai-manager-groups" value="词汇映射" placeholder="词汇映射"><datalist id="blai-ai-manager-groups"></datalist></label>
+                                                    <label id="blai-ai-manager-single" class="blai-ai-control" hidden><span class="blai-ai-control-label">单条保存的 API</span><select id="blai-ai-manager-source" class="blai-input"></select></label>
+                                                    <div id="blai-ai-manager-batch">
+                                                        <label class="blai-ai-control"><span class="blai-ai-control-label">“词汇映射”分组批量同步</span><select id="blai-ai-manager-mode" class="blai-input"><option value="add">仅新增：全部已保存预设 → 管理器</option><option value="to-manager">整组覆盖：词汇映射 → 管理器</option><option value="to-veridis">全部预设覆盖：管理器 → 词汇映射</option></select></label>
+                                                        <p>批量操作仅包含已保存的 API 预设，不含当前未保存输入。覆盖前显示对比数量，其他分组保留。</p>
+                                                    </div>
                                                     <button type="button" id="blai-ai-manager-export" class="blai-home-toolbar-button">保存到 API 管理器</button>
                                                     <p>只同步所选连接的 URL、Key 和模型，不切换酒馆主连接。</p>
                                                     <p id="blai-ai-manager-status" role="status" aria-live="polite"></p>
