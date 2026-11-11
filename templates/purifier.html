@@ -115,6 +115,21 @@
                                             </div>
                                         </header>
                                         <div class="blai-ai-connection-grid">
+                                            <details id="blai-ai-manager" class="blai-ai-manager">
+                                                <summary>API 管理器 · 导入 / 保存</summary>
+                                                <div class="blai-ai-manager-body">
+                                                    <button type="button" id="blai-ai-manager-refresh" class="blai-home-toolbar-button">读取管理器分组</button>
+                                                    <label class="blai-ai-control"><span class="blai-ai-control-label">管理器分组</span><select id="blai-ai-manager-group" class="blai-input"><option value="">请先读取分组</option></select></label>
+                                                    <label class="blai-ai-control"><span class="blai-ai-control-label">连接配置</span><select id="blai-ai-manager-entry" class="blai-input"><option value="">请先读取配置</option></select></label>
+                                                    <button type="button" id="blai-ai-manager-import" class="blai-home-toolbar-button" disabled>填入词汇映射</button>
+                                                    <hr>
+                                                    <label class="blai-ai-control"><span class="blai-ai-control-label">要保存到管理器的 API</span><select id="blai-ai-manager-source" class="blai-input"></select></label>
+                                                    <label class="blai-ai-control"><span class="blai-ai-control-label">目标分组（可填写新名称）</span><input id="blai-ai-manager-target" class="blai-input" list="blai-ai-manager-groups" value="词汇映射" placeholder="词汇映射"><datalist id="blai-ai-manager-groups"></datalist></label>
+                                                    <button type="button" id="blai-ai-manager-export" class="blai-home-toolbar-button">保存到 API 管理器</button>
+                                                    <p>只同步所选连接的 URL、Key 和模型，不切换酒馆主连接。</p>
+                                                    <p id="blai-ai-manager-status" role="status" aria-live="polite"></p>
+                                                </div>
+                                            </details>
                                             <label class="blai-ai-control blai-ai-api-preset-field">
                                                 <span class="blai-ai-control-label">API 预设</span>
                                                 <span class="blai-ai-compound-control">
