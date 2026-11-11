@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Veridis",
-    "version": "3.5.0-fix.37",
+    "version": "3.5.0-fix.38",
     "description": "在关键词净化基础上增加可选 OpenAI 兼容局部改写。",
-    "update_note": "修复37：前文透视按正文顺序以琥珀色标记 AI 未修改片段；补充引用后动作移位与解释回抄检查。无新增模型重试。"
+    "update_note": "修复38：API 连接新增 API 管理器双向导入与保存，可选分组、配置和已有预设，默认新建词汇映射分组；沿用管理器合并保存，不切换酒馆主连接。"
 }
