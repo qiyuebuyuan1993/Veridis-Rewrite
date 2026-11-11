@@ -551,6 +551,14 @@ export function bindAiSettingsEvents() {
     syncApiManagerControls = bindApiManagerControls({
         extensionSettings: extension_settings,
         getSettings: ensureAiRewriteSettings,
+        applyPresets: (presets) => {
+            const aiSettings = ensureAiRewriteSettings();
+            aiSettings.apiPresets = Object.fromEntries(Object.entries(presets)
+                .map(([name, preset]) => [name, normalizeAiApiPresetSnapshot(preset)]));
+            if (!Object.hasOwn(aiSettings.apiPresets, aiSettings.activeApiPreset)) aiSettings.activeApiPreset = '';
+            saveSettingsDebounced();
+            syncAiRewriteSettingsUI();
+        },
         applyConnection: (connection) => {
             const aiSettings = ensureAiRewriteSettings();
             Object.assign(aiSettings, connection, { modelOptions: [] });

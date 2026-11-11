@@ -1,6 +1,6 @@
-import { readManagerCatalog, managerRowToConnection, buildManagerImport, mergeThroughManager } from '../integrations/apiManager.js';
+import { readManagerCatalog, managerRowToConnection, buildManagerImport, buildManagerBatch, mergeThroughManager } from '../integrations/apiManager.js';
 
-export function bindApiManagerControls({ extensionSettings, getSettings, applyConnection }) {
+export function bindApiManagerControls({ extensionSettings, getSettings, applyConnection, applyPresets }) {
     const root = document.getElementById('blai-ai-manager');
     if (!root) return () => {};
     const find = name => root.querySelector('#blai-ai-manager-' + name);
@@ -9,6 +9,15 @@ export function bindApiManagerControls({ extensionSettings, getSettings, applyCo
     let catalog = null, visibleRows = [], sites = [], busy = false;
     const siteKey = row => JSON.stringify([row.site, row.source, row.url]);
     const read = () => readManagerCatalog(window, extensionSettings);
+    const isBatch = () => (target.value.trim() || '词汇映射') === '词汇映射';
+    const syncMode = () => {
+        const batch = isBatch();
+        find('single').hidden = batch;
+        find('batch').hidden = !batch;
+        source.disabled = busy || batch;
+        find('mode').disabled = busy || !batch;
+        find('export').textContent = batch ? '对比并批量同步' : '保存所选 API 到管理器';
+    };
     const renderRows = () => {
         visibleRows = (catalog?.entries || []).filter(row => !group.value
             || (group.value === 'ungrouped' ? !row.groupIds.length
@@ -34,6 +43,7 @@ export function bindApiManagerControls({ extensionSettings, getSettings, applyCo
         source.replaceChildren(new Option('当前连接（含未保存修改）', ''));
         Object.keys(getSettings().apiPresets || {}).forEach(name => source.add(new Option('已保存：' + name, name)));
         if ([...source.options].some(option => option.value === selected)) source.value = selected;
+        syncMode();
     };
     const run = async action => {
         if (busy) return;
@@ -48,6 +58,7 @@ export function bindApiManagerControls({ extensionSettings, getSettings, applyCo
             root.setAttribute('aria-busy', 'false');
             root.querySelectorAll('button,input,select').forEach(control => { control.disabled = false; });
             find('import').disabled = !catalog || rows.value === '';
+            syncMode();
         }
     };
     find('refresh').onclick = () => run(async () => {
@@ -75,6 +86,41 @@ export function bindApiManagerControls({ extensionSettings, getSettings, applyCo
     });
     find('export').onclick = () => run(async () => {
         const settings = getSettings();
+        if (isBatch()) {
+            const mode = find('mode').value;
+            const originalPresets = JSON.stringify(settings.apiPresets || {});
+            const latest = await read();
+            const originalCatalog = JSON.stringify(latest);
+            const plan = buildManagerBatch(latest, settings.apiPresets || {}, mode);
+            status.textContent = plan.summary;
+            if (!plan.catalog && !plan.presets) return;
+            if (mode !== 'add' && !window.confirm(plan.summary + '\n是否继续整组覆盖？')) {
+                status.textContent = '已取消批量覆盖，原有配置未改动。';
+                return;
+            }
+            const verifyUnchanged = async () => {
+                if (JSON.stringify(await read()) !== originalCatalog
+                    || JSON.stringify(getSettings().apiPresets || {}) !== originalPresets) {
+                    throw new Error('对比后配置已变化，未执行覆盖，请重新对比。');
+                }
+            };
+            if (plan.presets) {
+                await verifyUnchanged();
+                applyPresets(plan.presets);
+                status.textContent = `已批量保存 ${plan.count} 个 API 预设到词汇映射，当前连接保留。`;
+                return;
+            }
+            await mergeThroughManager(window, plan.catalog, { replace: plan.replace, beforeWrite: verifyUnchanged });
+            catalog = await read();
+            const expected = plan.catalog.entries;
+            if (!expected.every(entry => catalog.entries.some(row => JSON.stringify(row) === JSON.stringify(entry)))
+                || (plan.replace && catalog.entries.length !== expected.length)) {
+                throw new Error('尚未核实批量保存结果，请检查管理器后再重试。');
+            }
+            renderCatalog();
+            status.textContent = `批量同步完成。${plan.summary}`;
+            return;
+        }
         const name = source.value;
         const connection = name ? settings.apiPresets?.[name] : settings;
         if (!connection) throw new Error('这个 API 预设已不存在，请重新选择。');
@@ -93,6 +139,8 @@ export function bindApiManagerControls({ extensionSettings, getSettings, applyCo
         renderCatalog();
         status.textContent = `已保存到管理器的“${incoming.groups[0].name}”分组（本机）。`;
     });
+    target.oninput = syncMode;
+    target.onchange = syncMode;
     root.ontoggle = () => { if (root.open) sync(); };
     sync();
     return sync;
