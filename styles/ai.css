@@ -278,6 +278,10 @@ body #toast-container > .blai-ai-rewrite-toast.blai-ai-rewrite-progress-toast > 
     padding: 8px 0;
 }
 
+#blai-purifier-popup.blai-app-shell #blai-ai-manager [hidden] {
+    display: none !important;
+}
+
 #blai-purifier-popup.blai-app-shell .blai-ai-manager-body {
     display: grid;
     gap: 10px;
