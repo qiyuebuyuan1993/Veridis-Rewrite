@@ -9,11 +9,13 @@ import { normalizeOptionalXmlTagNameInput, parseScopeTagInput } from '../scope/m
 import { showToast } from '../ui/notifications.js';
 import { injectDiffButtons } from '../diff/view.js';
 import { parseAiRequestOptions } from './requestOptions.js';
+import { bindApiManagerControls } from './apiManagerControls.js';
 let aiApiCheckSequence = 0;
 
 export function bindAiSettingsEvents() {
     const { extension_settings, saveSettingsDebounced } = getAppContext();
     const settings = extension_settings[extensionName];
+    let syncApiManagerControls = () => {};
     const ensureAiRewriteSettings = () => {
         const currentAiSettings = settings.aiRewrite && typeof settings.aiRewrite === 'object'
             ? settings.aiRewrite
@@ -263,6 +265,7 @@ export function bindAiSettingsEvents() {
         $('#blai-ai-additional-parameters').attr('aria-invalid', String(Boolean(optionsError)));
         $('#blai-ai-request-options-error').text(optionsError).prop('hidden', !optionsError);
         syncAiApiPresetSelect(aiSettings);
+        syncApiManagerControls();
         syncAiModelControl(aiSettings);
         setValueIfNotFocused('#blai-ai-temperature', aiSettings.temperature);
         setValueIfNotFocused('#blai-ai-top-p', aiSettings.topP);
@@ -543,6 +546,19 @@ export function bindAiSettingsEvents() {
     $(document).off('click', '#blai-ai-model-fetch').on('click', '#blai-ai-model-fetch', function(e) {
         e.preventDefault();
         void runAiModelsHealthCheck();
+    });
+
+    syncApiManagerControls = bindApiManagerControls({
+        extensionSettings: extension_settings,
+        getSettings: ensureAiRewriteSettings,
+        applyConnection: (connection) => {
+            const aiSettings = ensureAiRewriteSettings();
+            Object.assign(aiSettings, connection, { modelOptions: [] });
+            ++aiApiCheckSequence; // Ignore a model-list response for the old connection.
+            saveSettingsDebounced();
+            syncAiRewriteSettingsUI();
+            resetAiApiCheckState();
+        },
     });
 
     if (settings.enableVisualDiff === false) {
