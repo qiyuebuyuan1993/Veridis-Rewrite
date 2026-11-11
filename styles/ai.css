@@ -267,8 +267,31 @@ body #toast-container > .blai-ai-rewrite-toast.blai-ai-rewrite-progress-toast > 
     gap: 14px 16px !important;
 }
 
+#blai-purifier-popup.blai-app-shell .blai-ai-manager,
 #blai-purifier-popup.blai-app-shell .blai-ai-api-preset-field {
     grid-column: 1 / -1 !important;
+}
+
+#blai-purifier-popup.blai-app-shell .blai-ai-manager summary {
+    cursor: pointer;
+    color: var(--text-main);
+    padding: 8px 0;
+}
+
+#blai-purifier-popup.blai-app-shell .blai-ai-manager-body {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    min-width: 0;
+}
+
+#blai-purifier-popup.blai-app-shell .blai-ai-manager-body p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: calc(12px * var(--blai-ui-font-scale, 1));
+    overflow-wrap: anywhere;
 }
 
 #blai-purifier-popup.blai-app-shell .blai-ai-control {
