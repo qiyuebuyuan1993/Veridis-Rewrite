@@ -11,10 +11,27 @@ function applyTauriMobileSurface(selector, surface) {
 }
 
 export function annotateTauriMobileSurfaces() {
-    applyTauriMobileSurface('#blai-purifier-popup, #blai-deep-clean-workspace, #blai-feedback-workspace', 'fullscreen-window');
+    applyTauriMobileSurface('#blai-main-panel-overlay', 'backdrop');
+    applyTauriMobileSurface('#blai-purifier-popup', 'free-window');
+    applyTauriMobileSurface('#blai-deep-clean-workspace, #blai-feedback-workspace', 'fullscreen-window');
     applyTauriMobileSurface('.blai-modal-shell, #blai-rule-transfer-modal, #blai-diff-modal, #blai-loading-overlay', 'backdrop');
     applyTauriMobileSurface('.blai-modal-card:not(.blai-tour-card), .blai-transfer-content, .blai-diff-modal-card, .blai-loading-panel, .blai-scope-tag-editor-card', 'fullscreen-window');
     applyTauriMobileSurface('.blai-toast', 'free-window');
+}
+
+export function isMainPanelOpen() {
+    const overlay = document.getElementById('blai-main-panel-overlay');
+    return Boolean(overlay && !overlay.hidden);
+}
+
+export function setMainPanelOpen(open) {
+    const overlay = document.getElementById('blai-main-panel-overlay');
+    const panel = document.getElementById('blai-purifier-popup');
+    const shouldOpen = open === true && Boolean(overlay) && Boolean(panel);
+    if (overlay) overlay.hidden = !shouldOpen;
+    if (panel) panel.style.display = shouldOpen ? 'grid' : 'none';
+    document.body.classList.toggle('blai-main-panel-open', shouldOpen);
+    return shouldOpen;
 }
 
 export function isLegacyPurifierDetected() {
@@ -85,7 +102,8 @@ export async function setupUI(renderTemplate, templateDirectory) {
         throw new TypeError('setupUI requires the current extension template directory');
     }
     logger.debug('[setupUI] 开始初始化 UI');
-    $('#blai-purifier-popup, #blai-rule-edit-modal, #blai-risk-confirm-modal, #blai-risk-info-modal, #blai-deep-clean-workspace, #blai-feedback-workspace, #blai-rule-transfer-modal, #blai-preset-import-choice-modal, #blai-rule-search-modal, #blai-scope-tags-modal, #blai-scope-tag-editor-modal, #blai-diff-modal, #blai-subrule-edit-modal, #blai-ai-prompt-modal, #blai-loading-overlay, .blai-toast').remove();
+    setMainPanelOpen(false);
+    $('#blai-main-panel-overlay, #blai-purifier-popup, #blai-rule-edit-modal, #blai-risk-confirm-modal, #blai-risk-info-modal, #blai-deep-clean-workspace, #blai-feedback-workspace, #blai-rule-transfer-modal, #blai-preset-import-choice-modal, #blai-rule-search-modal, #blai-scope-tags-modal, #blai-scope-tag-editor-modal, #blai-diff-modal, #blai-subrule-edit-modal, #blai-ai-prompt-modal, #blai-loading-overlay, .blai-toast').remove();
 
     const ensureExtensionPanelEntry = () => {
         if ($('#blai-extension-settings-entry').length || !$('#extensions_settings').length) return;
@@ -122,6 +140,7 @@ export async function setupUI(renderTemplate, templateDirectory) {
         false,
     );
     $('body').append(templateHtml);
+    setMainPanelOpen(false);
     updateLegacyPurifierWarning();
     window.setTimeout(updateLegacyPurifierWarning, 800);
     markRulesUiDirty(true);
