@@ -6,7 +6,8 @@ import { getAppContext } from '../host/appContext.js';
 import { logger } from '../log.js';
 import { ensureMessageDiffButton } from '../diff/view.js';
 import { beginAtomicMessageDisplaySwap, getMessageDomNode } from '../dom/message.js';
-import { getSillyTavernContextSnapshot } from '../host/context.js';
+import { getCurrentChatIdentity, getSillyTavernContextSnapshot } from '../host/context.js';
+import { generationLifecycle } from '../host/generationLifecycle.js';
 import { isBaiBaiToolkitInstalled } from '../integrations/baiBai.js';
 import { isLoreFrameInstalled } from '../integrations/loreFrame.js';
 import { isTauriTavernHost } from '../integrations/tauriTavern.js';
@@ -54,7 +55,33 @@ function usesManagedTauriTavernChatSurface() {
     }
 }
 
-function scheduleRenderedEvent(index, message, context) {
+function captureNotificationTarget(index, message, context) {
+    const chat = Array.isArray(context.chat) ? context.chat : getAppContext().chat;
+    const chatId = getCurrentChatIdentity();
+    const session = generationLifecycle.getActive();
+    const generationSequence = generationLifecycle.sequence;
+    const wasCancelled = session?.phase === 'cancelled';
+    const swipes = message.swipes;
+    const swipeId = message.swipe_id;
+    const text = message.mes;
+    const displayText = message.extra?.display_text;
+    const swipeText = Array.isArray(swipes) ? swipes[swipeId] : undefined;
+    const materialized = !Array.isArray(swipes)
+        || (Number.isInteger(swipeId) && swipeId >= 0 && swipeId < swipes.length);
+    return () => {
+        const current = getSillyTavernContextSnapshot();
+        const currentChat = Array.isArray(current.chat) ? current.chat : getAppContext().chat;
+        return materialized && currentChat === chat && getCurrentChatIdentity() === chatId
+            && chat?.[index] === message && generationLifecycle.getActive() === session
+            && generationLifecycle.sequence === generationSequence
+            && (session?.phase === 'cancelled') === wasCancelled
+            && message.swipes === swipes && message.swipe_id === swipeId
+            && (!Array.isArray(swipes) || swipes[swipeId] === swipeText)
+            && message.mes === text && message.extra?.display_text === displayText;
+    };
+}
+
+function scheduleRenderedEvent(index, message, context, isCurrent) {
     const appContext = getAppContext();
     const eventSource = context.eventSource || appContext.eventSource;
     const eventTypes = context.eventTypes || context.event_types || appContext.event_types;
@@ -68,7 +95,7 @@ function scheduleRenderedEvent(index, message, context) {
     return new Promise((resolve) => {
         const emitEvent = () => {
             Promise.resolve()
-                .then(() => eventSource.emit(eventType, index))
+                .then(() => { if (isCurrent()) return eventSource.emit(eventType, index); })
                 .catch((e) => logger.warn(`补发消息渲染事件失败 index=${index}`, e))
                 .finally(resolve);
         };
@@ -83,7 +110,7 @@ function scheduleRenderedEvent(index, message, context) {
     });
 }
 
-function scheduleMessageUpdatedEvent(index, context) {
+function scheduleMessageUpdatedEvent(index, context, isCurrent) {
     const appContext = getAppContext();
     const eventSource = context.eventSource || appContext.eventSource;
     const eventTypes = context.eventTypes || context.event_types || appContext.event_types;
@@ -93,7 +120,7 @@ function scheduleMessageUpdatedEvent(index, context) {
     return new Promise((resolve) => {
         const emitEvent = () => {
             Promise.resolve()
-                .then(() => eventSource.emit(eventType, index))
+                .then(() => { if (isCurrent()) return eventSource.emit(eventType, index); })
                 .catch((e) => logger.warn(`补发消息更新事件失败 index=${index}`, e))
                 .finally(resolve);
         };
@@ -170,6 +197,8 @@ export function refreshMessageDisplay(index, options = {}) {
     const hostUpdateMessageBlock = stContext.updateMessageBlock || appContext.updateMessageBlock;
     if (typeof hostUpdateMessageBlock === 'function') {
         const atomicSwap = options.atomicSwap || (options.atomic === true ? beginAtomicMessageDisplaySwap(index) : null);
+        // Capture before host rendering: its hooks can synchronously navigate.
+        const isCurrentNotification = captureNotificationTarget(index, message, stContext);
         try {
             hostUpdateMessageBlock(index, message);
             const isBaiBaiInstalled = isBaiBaiToolkitInstalled();
@@ -182,9 +211,9 @@ export function refreshMessageDisplay(index, options = {}) {
             const shouldEmitMessageUpdatedEvent = isLoreFrameInstalled()
                 && !shouldNotifyRenderedEvent;
             const pendingEvents = [];
-            if (shouldNotifyRenderedEvent) pendingEvents.push(scheduleRenderedEvent(index, message, stContext));
+            if (shouldNotifyRenderedEvent) pendingEvents.push(scheduleRenderedEvent(index, message, stContext, isCurrentNotification));
             else if (shouldEmitMessageUpdatedEvent) {
-                pendingEvents.push(scheduleMessageUpdatedEvent(index, stContext));
+                pendingEvents.push(scheduleMessageUpdatedEvent(index, stContext, isCurrentNotification));
             }
             if (needsHostSettle && options.atomic !== true) {
                 schedulePostRefreshDomSettle(index);
