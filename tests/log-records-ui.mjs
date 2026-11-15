@@ -63,12 +63,12 @@ const rules=Array.from({length:20},(_,i)=>({name:'规则组 '+(i+1),enabled:i%5!
 const settings=structuredClone(defaultSettings);Object.assign(settings,{logLevel:0,rules,activePreset:'原有规则集',presets:{'原有规则集':{rules},'新规则集':{rules:rules.slice(0,3),aiRewrite:{temperature:1.9,promptTemplate:'不覆盖'}}},aiRewrite:{...defaultAiRewriteSettings,enabled:true,temperature:0.65,promptTemplate:'保持当前全局提示词。'}});
 fixture.settings=settings;
 initAppContext({extension_settings:{[extensionName]:settings},saveSettingsDebounced:()=>fixture.saves++,getSillyTavernContext:()=>({})});
-document.querySelector('#blai-purifier-popup').style.display='grid';
+shell.setMainPanelOpen(true);
 renderTags();updateToolbarUI();bindAiSettingsEvents();fonts.bindUiFontScaleEvents();
 document.querySelector('#blai-ai-temperature').value=settings.aiRewrite.temperature;
 document.querySelector('#blai-ai-prompt').value=settings.aiRewrite.promptTemplate;
 document.addEventListener('click',e=>{const nav=e.target.closest('[data-page-target]');if(nav)shell.showResponsivePage(nav.dataset.pageTarget)});
-document.querySelector('#blai-close-btn').onclick=()=>document.querySelector('#blai-purifier-popup').style.display='none';
+document.querySelector('#blai-close-btn').onclick=()=>shell.setMainPanelOpen(false);
 document.querySelector('#blai-preset-save').onclick=()=>fixture.saves++;
 document.querySelector('#blai-preset-select').onchange=e=>applyPresetByName(e.target.value);
 for(const id of ['outside-left','outside-right'])document.getElementById(id).onclick=()=>fixture.sideClicks++;

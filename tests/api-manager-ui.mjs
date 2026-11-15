@@ -13,13 +13,17 @@ const fixtureSource = fs.readFileSync(new URL('./ui-column.mjs', import.meta.url
 const expression = fixtureSource.slice(fixtureSource.indexOf('const fixture = ') + 16, fixtureSource.indexOf('\n\nconst server =')).trim().replace(/;$/, '');
 const fixture = Function('template', 'return ' + expression)(template);
 const bundle = fs.readFileSync(process.env.API_MANAGER_BUNDLE, 'utf8');
+const jquery = fs.readFileSync(process.env.BLAI_TEST_JQUERY, 'utf8');
 const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://fixture').pathname;
     if (pathname === '/') { res.setHeader('Content-Type', 'text/html;charset=utf-8'); return res.end(fixture); }
     if (pathname === '/manager.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(bundle); }
+    if (pathname === '/jquery.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(jquery); }
+    if (pathname === '/extensions.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end('export const extension_settings = {};'); }
+    if (pathname === '/script.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end('export const saveSettingsDebounced = () => window.fixture?.saveSettings?.();'); }
     const file = path.resolve(root, '.' + pathname);
     if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end(); }
-    res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'image/png');
+    res.setHeader('Content-Type', /\.m?js$/.test(file) ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'image/png');
     res.end(fs.readFileSync(file));
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

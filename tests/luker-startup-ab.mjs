@@ -84,7 +84,7 @@ try{
   if(version==='candidate'){
    assert.equal(initial.rectReads,0);assert.equal(settled2.rectReads,0);assert.equal(settled2.layoutCallbacks,0);assert.equal(settled2.resizeCallbacks,0);
    checks.push('closed mobile window performs zero host layout reads or layout callbacks');
-   await page.evaluate(()=>document.getElementById('blai-purifier-popup').style.display='grid');
+   await page.evaluate(()=>{document.getElementById('blai-main-panel-overlay').hidden=false;document.getElementById('blai-purifier-popup').style.display='grid';});
    await page.waitForFunction(()=>matchMedia('(max-width: 600px)').matches);
    const mobile=await page.evaluate(async()=>{const before={...counts};for(let i=0;i<8;i++){document.body.classList.toggle('fixture-switch');document.getElementById('sheld').style.height=(740+i%2)+'px';await new Promise(requestAnimationFrame)}return{before,after:{...counts}}});
    assert.equal(mobile.after.rectReads,0);assert.equal(mobile.after.resizeCallbacks,0);checks.push('open mobile window also avoids host column measurements and observers');
@@ -93,10 +93,10 @@ try{
    await page.evaluate(()=>{document.getElementById('sheld').style.width='800px';document.getElementById('sheld').style.left='200px'});
    await page.waitForTimeout(100);assert.equal(await page.locator('#blai-purifier-popup').evaluate(el=>Math.round(el.getBoundingClientRect().width)),1040);assert.equal(await page.locator('#blai-purifier-popup').evaluate(el=>Math.round(el.getBoundingClientRect().left)),440);
    checks.push('open desktop window is fixed at 1040px and centered independently of chat column');
-   await page.evaluate(()=>document.getElementById('blai-purifier-popup').style.display='none');await page.waitForTimeout(150);
+   await page.evaluate(()=>{document.getElementById('blai-main-panel-overlay').hidden=true;document.getElementById('blai-purifier-popup').style.display='none';});await page.waitForTimeout(150);
    const closed=await page.evaluate(async()=>{const before={...counts};for(let i=0;i<8;i++){document.body.classList.toggle('fixture-switch');document.getElementById('sheld').style.width=(800+i%2)+'px';await new Promise(requestAnimationFrame)}return{before,after:{...counts}}});
    assert.equal(closed.after.rectReads,closed.before.rectReads);assert.equal(closed.after.resizeCallbacks,closed.before.resizeCallbacks);assert.equal(closed.after.layoutCallbacks,closed.before.layoutCallbacks);assert.equal(closed.after.rectReads,0);assert.equal(closed.after.resizeCallbacks,0);checks.push('desktop window never registers layout observers or reads chat bounds');
-   await page.evaluate(()=>document.getElementById('blai-purifier-popup').style.display='grid');
+   await page.evaluate(()=>{document.getElementById('blai-main-panel-overlay').hidden=false;document.getElementById('blai-purifier-popup').style.display='grid';});
    await page.waitForFunction(()=>Math.round(document.getElementById('blai-purifier-popup').getBoundingClientRect().width)===1040);
    await page.evaluate(()=>{document.getElementById('sheld').style.width='100%';document.getElementById('sheld').style.left='0'});
    await page.setViewportSize({width:360,height:744});await page.waitForFunction(()=>matchMedia('(max-width: 600px)').matches);await page.waitForTimeout(150);

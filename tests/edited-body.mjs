@@ -13,11 +13,32 @@ import { writeMessageDiffProgram, writeMessageDiffAiStage, getMessageDiffMeta, s
 import { getMessageDiffBranchKey, setCurrentSwipeText } from '../src/chat/messageBranch.js';
 import { applyScopedCompiledReplacements } from '../src/rules/engine.js';
 import { getAiRewriteRuntimeLog, clearAiRewriteDebugLog } from '../src/aiRewrite/debug.js';
+import { getMessageWriteCoordinator } from '../src/integrations/messageWriteCoordinator.js';
+import { generationLifecycle } from '../src/host/generationLifecycle.js';
+import { scheduleAiRewriteForMessage, markAiRewriteFinalCleanseReady } from '../src/aiRewrite/runtime.js';
+import { aiRewriteState } from '../src/aiRewrite/state.js';
 
 const oldOriginal = '他极其认真地检查桌面——随后停下。';
 const oldProgram = '他极其认真地检查桌面，随后停下。';
 const edited = '他极其认真地检查柜子——随后离开。\n“保留对白。”他拿起两个杯子。';
 const rewritten = '他认真地检查柜子，随后离开。';
+
+test('AI writeback preserves independently owned memory anchors and receipts on every swipe', () => {
+    const h = harness('string');
+    h.msg.extra.qianqianjie_floor = { floorId: 'outer-floor' };
+    h.msg.extra.qqj_v3_recall_receipt = { receipt: 'outer-receipt' };
+    h.msg.swipe_info = [
+        { extra: { qianqianjie_floor: { floorId: 'other-floor' }, privateOwner: true } },
+        { extra: { qianqianjie_floor: { floorId: 'selected-floor' }, qqj_v3_recall_receipt: { receipt: 'selected-receipt' }, display_text: 'stale display' } },
+    ];
+    const expected = structuredClone(h.msg.swipe_info);
+    delete expected[1].extra.display_text;
+    const outer = structuredClone(h.msg.extra);
+    const task = h.build();
+    assert.equal(applyAcceptedRewrites(task, h.reply(task)).committed, true);
+    assert.deepEqual(h.msg.swipe_info, expected);
+    assert.deepEqual(h.msg.extra, outer);
+});
 globalThis.document = { getElementById: () => null, querySelector: () => null,
     documentElement: { setAttribute() {} } };
 globalThis.CultivationRuleRouter = {};
@@ -239,6 +260,54 @@ test('cancelling an edited-body request preserves live text and old history', as
     const running = runAiRewriteForMessageNow(1, { manual: true });
     await sent; cancelAiRewriteTask('fixture-cancel'); await running;
     assert.deepEqual(h.chat, before);
+});
+
+test('native rewrite waits for another plugin save lease before reading and writing', async () => {
+    const h=harness('string');const coordinator=getMessageWriteCoordinator();
+    let release;const gate=new Promise(resolve=>{release=resolve;});
+    const other=coordinator.run(h.chat,'response-linter',()=>gate);
+    let requests=0;
+    globalThis.fetch=async (_url,options)=>{requests++;return {ok:true,status:200,json:async()=>({choices:[{message:{content:localEditResponse(JSON.parse(options.body).messages[0].content,{'hit-1':rewritten})}}]})};};
+    const running=runAiRewriteForMessageNow(1,{manual:true});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(requests,0);assert.equal(h.msg.mes,edited);
+    release();await other;await running;
+    assert.equal(requests,1);assert.ok(h.msg.mes.startsWith(rewritten));
+});
+
+test('late automatic model result cannot modify a floor after the next user message', {timeout:5000}, async () => {
+    const h=harness('string');delete h.msg.__blai_diff_branch_meta;
+    h.settings.aiRewrite.autoTriggerEnabled=true;
+    generationLifecycle.configure({getCurrentChatId:()=> 'host:fixture',getCurrentChat:()=>h.chat});
+    const session=generationLifecycle.startGeneration({chatId:'host:fixture',chat:h.chat,mode:'normal'});
+    generationLifecycle.bindMessage(1,{chatId:'host:fixture',chat:h.chat});
+    let started,release;const sent=new Promise(resolve=>{started=resolve;});
+    globalThis.fetch=(_url,options)=>new Promise(resolve=>{release=()=>resolve({ok:true,status:200,json:async()=>({choices:[{message:{content:localEditResponse(JSON.parse(options.body).messages[0].content,{'hit-1':rewritten})}}]})});started();});
+    const running=runAiRewriteForMessageNow({automatic:true,generationId:session.generationId,chatId:'host:fixture',messageId:1});
+    await sent;h.chat.push({is_user:true,mes:'下一轮',send_date:'fixture-next'});
+    const before=structuredClone(h.chat);release();await running;
+    assert.deepEqual(h.chat,before);
+    resetAiRewriteRuntimeState();generationLifecycle.cancelActive('fixture-end');
+});
+
+test('streaming request keeps its lease until the final receipt applies the deferred result', {timeout:5000}, async () => {
+    const h=harness('string');delete h.msg.__blai_diff_branch_meta;
+    h.settings.aiRewrite.autoTriggerEnabled=true;
+    generationLifecycle.configure({getCurrentChatId:()=> 'host:fixture',getCurrentChat:()=>h.chat});
+    const session=generationLifecycle.startGeneration({chatId:'host:fixture',chat:h.chat,mode:'normal'});
+    generationLifecycle.bindMessage(1,{chatId:'host:fixture',chat:h.chat});
+    const payload={automatic:true,generationId:session.generationId,chatId:'host:fixture',messageId:1,streamingSnapshot:true};
+    const prepared=buildAiRewriteTaskCheck(payload);assert.ok(prepared.task,prepared.reason);
+    globalThis.fetch=async (_url,options)=>({ok:true,status:200,json:async()=>({choices:[{message:{content:localEditResponse(JSON.parse(options.body).messages[0].content,{'hit-1':rewritten})}}]})});
+    scheduleAiRewriteForMessage(payload,{preparedTask:prepared.task});
+    while(!aiRewriteState.pendingApply) await new Promise(resolve=>setTimeout(resolve,5));
+    let repairStarted=false;
+    const repair=getMessageWriteCoordinator().run(h.chat,'response-linter',()=>{repairStarted=true;assert.ok(h.msg.mes.startsWith(rewritten));});
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(repairStarted,false);
+    generationLifecycle.markFinalSource(session.generationId,'message-received');
+    assert.equal(markAiRewriteFinalCleanseReady(payload),true);
+    await repair;assert.equal(repairStarted,true);
+    resetAiRewriteRuntimeState();generationLifecycle.cancelActive('fixture-end');
 });
 
 test('final Program processors still run on accepted AI output', () => {
