@@ -3,6 +3,8 @@
  * It does not own Diff metadata or persistence.
  */
 import { generationLifecycle } from '../host/generationLifecycle.js';
+import { getAppContext } from '../host/appContext.js';
+import { getMessageWriteCoordinator } from '../integrations/messageWriteCoordinator.js';
 
 function isObject(value) {
     return !!(value && typeof value === 'object');
@@ -68,8 +70,14 @@ export function syncCurrentSwipeExtra(msg) {
     const swipeInfo = msg.swipe_info[swipeIndex];
     if (!isObject(swipeInfo)) return false;
 
-    swipeInfo.extra = structuredClone(isObject(msg.extra) ? msg.extra : {});
-    return true;
+    // Only the display override belongs to this text operation. Memory plugins
+    // own per-swipe anchors/receipts which may intentionally differ from msg.extra.
+    if (!isObject(swipeInfo.extra)) return false;
+    if (Object.prototype.hasOwnProperty.call(msg.extra || {}, 'display_text')) {
+        swipeInfo.extra.display_text = structuredClone(msg.extra.display_text);
+        return true;
+    }
+    return deleteValue(swipeInfo.extra, 'display_text');
 }
 
 /**
@@ -77,6 +85,11 @@ export function syncCurrentSwipeExtra(msg) {
  * 只要消息声明了 swipes，当前槽就必须真实存在；否则不修改任何数据。
  */
 export function commitCurrentMessageText(msg, text, expectedBranchKey = '') {
+    const coordinator = getMessageWriteCoordinator();
+    const chat = getAppContext().chat;
+    if (coordinator.isOwner(chat, 'response-linter') || coordinator.isOwner(chat, 'veridis-save')) {
+        return { ok: false, changed: false, reason: 'shared-write-busy' };
+    }
     if (!isObject(msg) || typeof msg.mes !== 'string') {
         return { ok: false, changed: false, reason: 'message-text-missing', branchKey: 'main' };
     }
