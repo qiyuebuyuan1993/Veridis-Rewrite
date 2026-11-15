@@ -39,6 +39,7 @@ export function initRealtimeInterceptor() {
 export function bindHostLifecycleEvents() {
     const { eventSource, event_types } = getAppContext();
     let messageReceivedHasMvuPriority = false;
+    let pendingInitiatingUserMessage = null;
     let currentCharacter = getCurrentCharacterContext();
     const updateMessageReceivedOrder = () => {
         if (!event_types.MESSAGE_RECEIVED) return;
@@ -180,10 +181,30 @@ export function bindHostLifecycleEvents() {
             .catch(error => logger.error('最终正文协调失败，未继续净化', error));
     };
     const cancelAutomaticGeneration = (reason) => {
+        pendingInitiatingUserMessage = null;
         generationLifecycle.cancelActive(reason);
         resetAiRewriteRuntimeState(reason);
     };
-    if (event_types.MESSAGE_SENT) eventSource.on(event_types.MESSAGE_SENT, () => {
+    if (event_types.MESSAGE_SENT) eventSource.on(event_types.MESSAGE_SENT, (payload) => {
+        const pending = pendingInitiatingUserMessage;
+        pendingInitiatingUserMessage = null;
+        const session = generationLifecycle.getActive();
+        const { chat } = getAppContext();
+        const index = getMessageIndexFromEvent(payload);
+        // TT/ST can emit STARTED before appending this turn's user message.
+        // Only that one append belongs to the new generation; later sends cancel it.
+        if (pending && session === pending.session && session.phase === 'active'
+            && session.messageRef === null && session.requestState === 'idle'
+            && chat === session.chatRef && getCurrentChatIdentity() === session.chatId
+            && index === pending.length && chat.length === pending.length + 1
+            && (pending.length === 0 || (chat[pending.length - 1] === pending.tail
+                && pending.tail?.mes === pending.tailText))
+            && (chat[index]?.is_user === true || chat[index]?.role === 'user')) {
+            recordAiRewriteRuntimeDebug('generation-initiating-user-message', {
+                generationId: session.generationId, chatId: session.chatId, messageId: index,
+            });
+            return;
+        }
         cancelAutomaticGeneration('next-user-message');
     });
 
@@ -236,6 +257,9 @@ export function bindHostLifecycleEvents() {
             chat,
             mode: generationStart.mode,
         });
+        pendingInitiatingUserMessage = ['normal', 'generation'].includes(generationStart.mode)
+            && options?.automatic_trigger !== true && Array.isArray(chat)
+            ? { session, length: chat.length, tail, tailText: tail?.mes } : null;
         streamingRuntimeState.isStreamingGeneration = true;
         resetStreamingProcessorInstallFailureState();
         handleAiRewriteGenerationStarted(session);
@@ -250,6 +274,7 @@ export function bindHostLifecycleEvents() {
         else eventSource.on(event_types.STREAM_TOKEN_RECEIVED, onStreamTokenReceived);
     }
     if (event_types.GENERATION_ENDED) eventSource.on(event_types.GENERATION_ENDED, (postOperationChatLength) => {
+        pendingInitiatingUserMessage = null;
         streamingRuntimeState.isStreamingGeneration = false;
         recordAiRewriteRuntimeDebug('generation-ended-observed', {
             postOperationChatLength: Number.isInteger(postOperationChatLength) ? postOperationChatLength : null,
@@ -257,6 +282,7 @@ export function bindHostLifecycleEvents() {
         });
     });
     if (event_types.GENERATION_STOPPED) eventSource.on(event_types.GENERATION_STOPPED, () => {
+        pendingInitiatingUserMessage = null;
         streamingRuntimeState.isStreamingGeneration = false;
         recordAiRewriteRuntimeDebug('generation-stopped-observed', {
             generationId: generationLifecycle.getActive()?.generationId || '',
