@@ -7,6 +7,7 @@ import { isAssistantMessage } from '../diff/tracking.js';
 import { getMessageDiffMeta, isMessageDiffReverted } from '../diff/messageMeta.js';
 import { getMessageDiffBranchKey } from '../chat/messageBranch.js';
 import { getCurrentChatIdentity } from '../host/context.js';
+import { getMessageWriteCoordinator } from '../integrations/messageWriteCoordinator.js';
 import { generationLifecycle } from '../host/generationLifecycle.js';
 import { AiRewriteRequestFormatError, isAiRewriteRequestFormatError, isBadRequestError, requestAiRewrite, getAiRewriteTransport } from './generation.js';
 import { recordAiRewriteDebug } from './debug.js';
@@ -139,7 +140,7 @@ function attachAiRewriteDismissAction(toast, task) {
 function terminateAiRewriteTask(task = null, options = {}) {
     const rewriteState = aiRewriteState;
     const targetTask = task || rewriteState.statusTask || rewriteState.activeTask || null;
-    if (isSameAiRewriteTask(rewriteState.pendingApply?.task, targetTask)) rewriteState.pendingApply = null;
+    if (isSameAiRewriteTask(rewriteState.pendingApply?.task, targetTask)) clearPendingApply(rewriteState);
     if (targetTask?.automatic === true) {
         generationLifecycle.markRequestTerminated(targetTask.generationId, 'cancelled', 'user-terminated');
     }
@@ -383,7 +384,7 @@ function formatAiRewriteCompletionMessage(task, message) {
 
 function finishAiRewriteApply(task, accepted) {
     const rewriteState = aiRewriteState;
-    if (isSameAiRewriteTask(rewriteState.pendingApply?.task, task)) rewriteState.pendingApply = null;
+    if (isSameAiRewriteTask(rewriteState.pendingApply?.task, task)) clearPendingApply(rewriteState);
 
     if (!isTaskStillFresh(task)) {
         const freshnessIssue = getTaskFreshnessIssue(task) || 'stale';
@@ -443,13 +444,24 @@ function finishAiRewriteApply(task, accepted) {
     return { status: 'no-change', applyResult };
 }
 
+function clearPendingApply(state) {
+    state.pendingApply?.resolveSettled?.();
+    state.pendingApply = null;
+}
+
+function pendingApplyEntry(entry) {
+    clearPendingApply(aiRewriteState);
+    entry.settled = new Promise(resolve => { entry.resolveSettled = resolve; });
+    return entry;
+}
+
 function deferAiRewriteApplyUntilFinalCleanse(task, accepted) {
     const rewriteState = aiRewriteState;
-    rewriteState.pendingApply = {
+    rewriteState.pendingApply = pendingApplyEntry({
         mode: 'accepted',
         task,
         accepted: new Map(accepted),
-    };
+    });
     recordAiRewriteDebug('apply-deferred', {
         generationId: task.generationId || '',
         index: task.index,
@@ -466,11 +478,11 @@ function deferAiRewriteApplyUntilFinalCleanse(task, accepted) {
 }
 
 function deferAiRewriteFallbackUntilFinalCleanse(task, reason) {
-    aiRewriteState.pendingApply = {
+    aiRewriteState.pendingApply = pendingApplyEntry({
         mode: 'fallback',
         task,
         reason: String(reason || ''),
-    };
+    });
     recordAiRewriteDebug('apply-deferred', {
         generationId: task.generationId || '',
         index: task.index,
@@ -498,7 +510,7 @@ function flushPendingAiRewriteApplyForMessageKey(messageKey) {
     const rewriteState = aiRewriteState;
     const entry = rewriteState.pendingApply;
     if (!entry || getTaskMessageKey(entry.task) !== messageKey) return 0;
-    rewriteState.pendingApply = null;
+    clearPendingApply(rewriteState);
     const freshnessIssue = getTaskFreshnessIssue(entry.task);
     if (freshnessIssue) {
         recordAiRewriteDebug('apply-flush-skip', {
@@ -609,7 +621,7 @@ export function cancelAiRewriteTask(reason = 'cancelled') {
 function finishAutomaticTaskBeforeRun(payload, reason, state = 'stale') {
     const generationId = String(payload?.generationId || '');
     const session = generationLifecycle.getSession(generationId);
-    if (aiRewriteState.pendingApply?.task?.generationId === generationId) aiRewriteState.pendingApply = null;
+    if (aiRewriteState.pendingApply?.task?.generationId === generationId) clearPendingApply(aiRewriteState);
     if (aiRewriteState.runningTask?.generationId === generationId) aiRewriteState.runningTask = null;
     if (aiRewriteState.activeTask?.generationId === generationId) cancelAiRewriteTask(reason);
     generationLifecycle.markRequestTerminated(generationId, state, reason);
@@ -675,7 +687,7 @@ export function handleAiRewriteGenerationStarted(session = null) {
     clearAiRewriteStatusToast(null, 'superseded-by-new-generation');
     state.statusDismissedTask = null;
     cancelAiRewriteTask('generation-started');
-    state.pendingApply = null;
+    clearPendingApply(state);
     state.runningTask = null;
 }
 
@@ -688,7 +700,7 @@ export function resetAiRewriteRuntimeState(reason = 'reset') {
     state.runningTask = null;
     state.finalCleanseSequence = 0;
     state.finalCleanseByMessageKey.clear();
-    state.pendingApply = null;
+    clearPendingApply(state);
     const session = generationLifecycle.getActive();
     if (session) session.contentIdentity = null;
 }
@@ -1063,7 +1075,21 @@ async function requestAcceptedRewritesOnce(task, rewriteState, attempt, maxAttem
     return { stale: false, accepted };
 }
 
-async function runAiRewriteForMessage(payload, options = {}) {
+function runAiRewriteForMessage(payload, options = {}) {
+    const chat = getAppContext().chat;
+    const message = chat?.[getAiRewriteMessageId(payload)];
+    const chatId = getCurrentChatIdentity();
+    return getMessageWriteCoordinator().run(chat, 'veridis-rewrite', async () => {
+        if (getAppContext().chat !== chat || getCurrentChatIdentity() !== chatId
+            || chat[getAiRewriteMessageId(payload)] !== message) return { status: 'stale' };
+        const result = await runAiRewriteWithLease(payload, options);
+        const pending = aiRewriteState.pendingApply;
+        if (pending?.task?.messageRef === message && pending.settled) await pending.settled;
+        return result;
+    });
+}
+
+async function runAiRewriteWithLease(payload, options = {}) {
     if (payload?.automatic === true && options.claimRequest === true) {
         const claim = generationLifecycle.claimRequest(payload.generationId, payload.source || 'automatic');
         if (!claim.ok) {
@@ -1282,7 +1308,7 @@ export function requestManualAiRewriteForMessage(payload) {
         return false;
     }
 
-    if (isSameAiRewriteTask(rewriteState.pendingApply?.task, task)) rewriteState.pendingApply = null;
+    if (isSameAiRewriteTask(rewriteState.pendingApply?.task, task)) clearPendingApply(rewriteState);
     recordAiRewriteDebug('manual-request', {
         index: task.index,
         sentenceTargetCount: task.items.length,
