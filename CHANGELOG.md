@@ -4,6 +4,12 @@
 
 原作者：[The-Veridis-Lion](https://github.com/The-Veridis-Lion)。原项目：[GitHub](https://github.com/The-Veridis-Lion/Veridis-Rewrite) / [Discord](https://discord.com/channels/1134557553011998840/1488671923776000020)。本修改版继续遵守 README 中完整保留的[许可与版权](README.md#许可与版权)，仅供非商业使用。
 
+## 2026-11-15：修复43
+
+- 修复宿主先发出 GENERATION_STARTED、再追加本轮用户消息并发出 MESSAGE_SENT 时，自动改写被误当成下一轮而取消的问题。
+- 只允许同聊天、同生成、原尾部未变且恰好追加的一条起始用户消息；后续用户消息、重生成/Swipe、结束或停止后的发送仍执行取消保护。
+- 新增真实生命周期模块的模拟 API 回归：两种事件顺序均能自动调用一次；下一条用户消息出现后，迟到结果不能覆盖已稳定正文或千千结回执。未调用付费模型，不等同于 Android TT 真机验证。
+
 ## 2026-11-15：修复42
 
 - 延迟渲染/消息更新通知执行前校验原聊天、消息、Swipe、正文与生成轮次，避免导航或新生成后的旧通知继续触发其他插件。
