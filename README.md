@@ -6,7 +6,7 @@
 
 Veridis Rewrite 是一个为 SillyTavern 准备的文本净化与 AI 局部改写扩展。你可以用规则直接替换或删除不想保留的词句，也可以让 AI 只改写被规则命中的句子；同时提供预设、范围保护、修改记录、Deep Clean、更新检查和匿名反馈等功能。
 
-当前修改版：`3.5.0-fix.41`（上游基线 `3.5`）
+当前修改版：`3.5.0-fix.42`（上游基线 `3.5`）
 
 本修改版统一维护在 [qiyuebuyuan1993/Veridis-Rewrite 的 main 分支](https://github.com/qiyuebuyuan1993/Veridis-Rewrite/tree/main)，原 `fix/luker-api-rewrite-compat` 的累计修改已全部合入，旧分支停止提供。原来安装在旧分支的用户，请在酒馆或 TauriTavern 的扩展管理中将此插件切换到 `main`，然后更新并刷新；不要删除聊天数据或插件设置。更新检查跟随实际安装分支，不会替你切换仓库或分支。
 
