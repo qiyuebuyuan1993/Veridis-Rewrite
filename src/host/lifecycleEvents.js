@@ -54,6 +54,11 @@ export function bindHostLifecycleEvents() {
         if (index < 0 || !Array.isArray(chat) || !isAssistantMessage(chat[index])) return;
         injectDiffButtonsStreamingSafe([index]);
     };
+    // The host may render/rebuild the toolbar after MESSAGE_RECEIVED. This is
+    // display-only: never re-run finalization or emit another message event.
+    if (event_types.CHARACTER_MESSAGE_RENDERED) {
+        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, projectDiffButtonFromPayload);
+    }
 
     const runFinalStreamingCleanse = (payload, options = {}) => {
         if (options.acknowledgeGenerationId) {

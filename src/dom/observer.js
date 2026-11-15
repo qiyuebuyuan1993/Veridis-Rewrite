@@ -41,6 +41,10 @@ export function initDomObserver({ injectDiffButtons }) {
         try {
             for (let mi = 0; mi < mutations.length; mi++) {
                 const m = mutations[mi];
+                // A host can replace only a message's toolbar, without adding
+                // another .mes node. Restore its controls after that render.
+                const owner = (m.target.nodeType === 1 ? m.target : m.target.parentElement)?.closest?.('.mes');
+                if (owner) collectDiffButtonIndex(owner, retainedDiffIndices, touchedMessageIndices);
                 for (let ni = 0; ni < m.addedNodes.length; ni++) {
                     const node = m.addedNodes[ni];
                     if (node.nodeType === 1) {
@@ -54,7 +58,7 @@ export function initDomObserver({ injectDiffButtons }) {
             }
         } finally {
             chatObserver.takeRecords();
-            injectDiffButtons([...touchedMessageIndices]);
+            if (touchedMessageIndices.size > 0) injectDiffButtons([...touchedMessageIndices]);
             isPurifying = false;
         }
     });
