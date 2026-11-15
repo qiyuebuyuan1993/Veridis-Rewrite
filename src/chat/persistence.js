@@ -3,6 +3,8 @@ import { getAppContext } from '../host/appContext.js';
 import { logger } from '../log.js';
 import { getSillyTavernContextSnapshot } from '../host/context.js';
 import { isTauriTavernHost } from '../integrations/tauriTavern.js';
+import { getMessageWriteCoordinator } from '../integrations/messageWriteCoordinator.js';
+import { getCurrentChatIdentity } from '../host/context.js';
 
 /**
  * 排队执行增量聊天保存。
@@ -23,12 +25,17 @@ function getPreferredSaveChatFunction() {
 }
 
 async function runPreferredSaveChat() {
-    const saveChat = getPreferredSaveChatFunction();
-    if (typeof saveChat !== 'function') return false;
+    const chat = getAppContext().chat;
+    const chatId = getCurrentChatIdentity();
+    return getMessageWriteCoordinator().run(chat, 'veridis-save', async () => {
+        if (getAppContext().chat !== chat || getCurrentChatIdentity() !== chatId) return false;
+        const saveChat = getPreferredSaveChatFunction();
+        if (typeof saveChat !== 'function') return false;
 
-    const result = saveChat();
-    if (result && typeof result.then === 'function') await result;
-    return true;
+        const result = saveChat();
+        if (result && typeof result.then === 'function') await result;
+        return true;
+    });
 }
 
 function notifyChatSaveFailure(error) {

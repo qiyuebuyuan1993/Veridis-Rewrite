@@ -1,12 +1,63 @@
-/* Fixed centered desktop window; mobile layout stays under the original media queries. */
-@media (min-width: 601px) {
-    #blai-purifier-popup.blai-app-shell {
-        left: max(16px, calc((100vw - 1040px) / 2)) !important;
-        right: auto !important;
-        width: min(1040px, calc(100vw - 32px)) !important;
-        max-width: calc(100vw - 32px) !important;
-        border-inline: 1px solid var(--border-color) !important;
-        box-shadow: 0 0 24px color-mix(in srgb, var(--text-main) 12%, transparent) !important;
+/* Wand-opened main panel: a centered bounded window over a dim backdrop. */
+#blai-main-panel-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 2147483599 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) !important;
+    overflow: hidden !important;
+    background: rgba(0, 0, 0, 0.55) !important;
+}
+
+#blai-main-panel-overlay[hidden] {
+    display: none !important;
+}
+
+body.blai-main-panel-open {
+    overflow: hidden !important;
+}
+
+#blai-main-panel-overlay #blai-purifier-popup.blai-app-shell {
+    position: relative !important;
+    inset: auto !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    transform: none !important;
+    width: min(1040px, 100%) !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    max-height: 900px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 20px !important;
+    background: var(--bg-base) !important;
+    box-shadow: 0 24px 64px color-mix(in srgb, #000 34%, transparent) !important;
+    overflow: hidden !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+@media (max-width: 600px) {
+    #blai-main-panel-overlay {
+        padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)) !important;
+    }
+
+    #blai-main-panel-overlay #blai-purifier-popup.blai-app-shell {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        border-radius: 16px !important;
+        background: var(--bg-surface) !important;
+        box-shadow: 0 18px 48px color-mix(in srgb, #000 32%, transparent) !important;
     }
 }
 

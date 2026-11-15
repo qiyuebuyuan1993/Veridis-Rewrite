@@ -20,6 +20,8 @@ import { classifyHostGenerationStart, generationLifecycle } from './generationLi
 import { handleStreamingToken, injectDiffButtonsStreamingSafe, resetStreamingProcessorInstallFailureState } from './streaming.js';
 import { initDomObserver, initPersonaProtectionObserver } from '../dom/observer.js';
 import { clearPendingShujukuRewrite, markLatestMessageShujukuRewritePending } from '../shujuku/realtime.js';
+import { getMessageWriteCoordinator } from '../integrations/messageWriteCoordinator.js';
+import { logger } from '../log.js';
 
 export function initRealtimeInterceptor() {
     generationLifecycle.configure({
@@ -99,7 +101,7 @@ export function bindHostLifecycleEvents() {
         return cleanseResult;
     };
 
-    const finalizeGenerationMessage = (messageId, source, generationId = '') => {
+    const finalizeGenerationMessageWithLease = (messageId, source, generationId = '') => {
         const { chat } = getAppContext();
         const resolution = generationLifecycle.bindMessage(messageId, {
             generationId,
@@ -153,10 +155,32 @@ export function bindHostLifecycleEvents() {
             phase: 'direct',
         });
     };
+    const finalizeGenerationMessage = (messageId, source, generationId = '') => {
+        const chat = getAppContext().chat;
+        const message = chat?.[messageId];
+        const chatId = getCurrentChatIdentity();
+        const expectedGeneration = generationId || generationLifecycle.getActive()?.generationId || '';
+        const finish = () => {
+            if (getAppContext().chat !== chat || getCurrentChatIdentity() !== chatId
+                || chat?.[messageId] !== message || messageId !== chat.length - 1
+                || generationLifecycle.getActive()?.generationId !== expectedGeneration) return;
+            return finalizeGenerationMessageWithLease(messageId, source, expectedGeneration);
+        };
+        const coordinator = getMessageWriteCoordinator();
+        // A streaming AI request owns this lease while waiting for this final host receipt.
+        if (coordinator.isOwner(chat, 'veridis-rewrite')) return finish();
+        // Host render/save hooks can emit events while another extension holds
+        // the lease. Enqueue without making that hook await its own queue tail.
+        void coordinator.run(chat, 'veridis-rewrite', finish)
+            .catch(error => logger.error('最终正文协调失败，未继续净化', error));
+    };
     const cancelAutomaticGeneration = (reason) => {
         generationLifecycle.cancelActive(reason);
         resetAiRewriteRuntimeState(reason);
     };
+    if (event_types.MESSAGE_SENT) eventSource.on(event_types.MESSAGE_SENT, () => {
+        cancelAutomaticGeneration('next-user-message');
+    });
 
     if (event_types.MESSAGE_EDITED) {
         eventSource.on(event_types.MESSAGE_EDITED, (payload) => {

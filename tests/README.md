@@ -7,7 +7,7 @@
 npm install
 npx playwright install chromium
 npm test
-npm run test:ui
+BLAI_TEST_JQUERY=/path/to/SillyTavern/public/lib/jquery-3.5.1.min.js npm run test:ui
 ```
 
 `npm test` 运行不依赖外部插件源码的单元测试。下面两项集成测试需要显式指定只读源码：
@@ -50,6 +50,7 @@ npm run test:startup
 | `BLAI_TEST_MODULES` | 外部已安装 Playwright 的 `node_modules/` 路径 |
 | `VERIDIS_YAML_MODULE` | 宿主已安装的 `yaml` 包路径；未设置则使用开发依赖 |
 | `BLAI_TEST_OUTPUT` | 界面检查的输出目录 |
+| `BLAI_TEST_JQUERY` | `test:ui` 和 `test:api-manager-ui` 必需：宿主 jQuery 文件，用于运行完整真实事件绑定 |
 
 示例使用 POSIX 环境变量写法；PowerShell 中使用 `$env:变量名='值'` 后运行相同的 npm 命令。
 真实 Luker 联合测试的结果和边界另见 [验证记录](../docs/compatibility-verification.md)。
@@ -72,4 +73,6 @@ TauriTavern 路由契约测试另行运行 `npm run test:tauri`。设置 `VERIDI
 `npm test` 包含 `communication-storage.mjs`：刷新等价加载、清空、10条上限、空间不足、损坏数据及既有密钥脱敏。`npm run test:log-ui` 使用与 `test:ui` 相同的 Playwright 环境变量，验证真实页面刷新及每组复制；输出为隔离浏览器测试结果，不代表真机。最新发布代码/集成检查总数为267；完整平台复现范围见 `docs/compatibility-verification.md`。
 
 ## 单项编辑浏览器验证
+
+修复40的三插件联合契约测试：设置 `BLAI_RESPONSE_REFERENCE` 为响应检查器1.4.12源码根目录、`BLAI_MYRIAD_REFERENCE` 为千千结提交 `5407522ef5b7c6e05e3c2575f26f432cccd6751d` 的源码根目录，然后运行 `node --test tests/response-myriad-joint.mjs`。它执行两插件真实写回模块和千千结真实稳定楼扫描，模型、宿主及保存使用中性替身；不代表Android真机或真实摘要模型测试。
 `node tests/fragment-ui.mjs`（与其他 UI 脚本相同的 BLAI_TEST_MODULES / BLAI_TEST_CHROME 配置）。隔离宿主模拟保存到 localStorage，真实刷新恢复；不证明 Tauri 原生持久化。

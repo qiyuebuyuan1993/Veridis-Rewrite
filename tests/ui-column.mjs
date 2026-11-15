@@ -10,12 +10,14 @@ const require = createRequire(process.env.BLAI_TEST_MODULES || import.meta.url);
 const { chromium } = require('playwright');
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const template = fs.readFileSync(path.join(root, 'templates/purifier.html'), 'utf8').replace('{{logoUrl}}', '/images/veridis-logo.png');
+const jquery = fs.readFileSync(process.env.BLAI_TEST_JQUERY, 'utf8');
 const fixture = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/style.css">
 <style>html,body{margin:0;font-family:Arial,'Microsoft YaHei',sans-serif;font-size:14px}body{background:linear-gradient(120deg,#dce8dc,#e5cfc3)}
 #sheld{position:absolute;width:51vw;left:24.5vw;top:0;height:100vh;background:#eef1f4}#outside-left,#outside-right{position:absolute;top:160px;padding:18px}#outside-left{left:12px}#outside-right{right:12px}
 :root{--SmartThemeBlurTintColor:#fbfaf7;--SmartThemeQuoteColor:#62564f;--SmartThemeBodyColor:#403831;--SmartThemeBorderColor:#d9cec4}
-.fas:before{content:'·'}button{font:inherit}</style></head><body><div id="sheld"></div><button id="outside-left">左侧区域</button><button id="outside-right">右侧区域</button>${template}
-<script type="module">
+#data_bank_wand_container,#open-chat-diff{position:relative;z-index:1}
+.fas:before{content:'·'}button{font:inherit}</style></head><body><div id="sheld"></div><button id="outside-left">左侧区域</button><button id="outside-right">右侧区域</button><div id="data_bank_wand_container"><div id="blai-wand-btn" class="list-group-item">词汇映射</div></div><button class="blai-diff-btn" data-index="0" id="open-chat-diff" type="button">打开聊天差异</button>${template}
+<script src="/jquery.js"></script><script type="module">
 class Q {
  constructor(nodes){this.nodes=nodes;this.length=nodes.length;nodes.forEach((n,i)=>this[i]=n)}
  each(fn){this.nodes.forEach((n,i)=>fn.call(n,i,n));return this}
@@ -44,7 +46,7 @@ class Q {
  append(child){return this.each(function(){for(const node of child.nodes||(child.nodeType?[child]:[]))this.append(node)})}
  appendTo(target){$(target).append(this);return this}
 }
-window.$=(sel,props)=>{
+if (!window.jQuery) window.$=(sel,props)=>{
  if(sel instanceof Q)return sel;
  if(typeof sel==='string'&&sel.startsWith('<')){const t=document.createElement('template');t.innerHTML=sel.replace(/^<(\\w+)>$/,'<$1></$1>');const q=new Q(Array.from(t.content.children));if(props)for(const[k,v]of Object.entries(props))k==='text'?q.text(v):q.attr(k,v);return q}
  return new Q(typeof sel==='string'?Array.from(document.querySelectorAll(sel)):sel?[sel]:[])
@@ -52,24 +54,27 @@ window.$=(sel,props)=>{
 const shell=await import('/src/ui/shell.js');
 const {initAppContext}=await import('/src/host/appContext.js');
 const {extensionName,defaultSettings,defaultAiRewriteSettings}=await import('/src/settings/defaults.js');
-const {renderTags}=await import('/src/rules/view.js');
-const {updateToolbarUI}=await import('/src/presets/view.js');
-const {applyPresetByName}=await import('/src/presets/application.js');
-const {bindAiSettingsEvents}=await import('/src/aiRewrite/settingsEvents.js');
+const {bindEvents}=await import('/src/events.js');
 const fonts=await import('/src/ui/fontScale.js');
-window.fixture={shell,fonts,saves:0,sideClicks:0};
+window.fixture={shell,fonts,bindEvents,saves:0,sideClicks:0,failSave:false};
+const chat=[{mes:'好。好。',swipe_id:0,swipes:['好。好。','其他'],extra:{}}];
+const diffMeta=await import('/src/diff/messageMeta.js');
+diffMeta.writeMessageDiffAiStage(chat[0],'swipe:0','旧。旧。','好。好。','好。好。');
+fixture.chat=chat;
 const rules=Array.from({length:20},(_,i)=>({name:'规则组 '+(i+1),enabled:i%5!==0,subRules:Array.from({length:5},(_,n)=>({mode:'regex',rewriteMode:'ai',enabled:n%3!==0,targets:['(?<![“「])示例目标与较长正则表达式'.repeat(4)],replacements:[],aiPromptTemplate:'保持实际动作、对白和正常数量。'}))}));
-const settings=structuredClone(defaultSettings);Object.assign(settings,{logLevel:0,rules,activePreset:'原有规则集',presets:{'原有规则集':{rules},'新规则集':{rules:rules.slice(0,3),aiRewrite:{temperature:1.9,promptTemplate:'不覆盖'}}},aiRewrite:{...defaultAiRewriteSettings,enabled:true,temperature:0.65,promptTemplate:'保持当前全局提示词。'}});
+const settings=structuredClone(defaultSettings);Object.assign(settings,{logLevel:0,rules,activePreset:'原有规则集',guidedTourSeen:{main:true,deepClean:true},presets:{'原有规则集':{rules},'新规则集':{rules:rules.slice(0,3),aiRewrite:{temperature:1.9,promptTemplate:'不覆盖'}}},aiRewrite:{...defaultAiRewriteSettings,enabled:true,temperature:0.65,promptTemplate:'保持当前全局提示词。'}});
 fixture.settings=settings;
-initAppContext({extension_settings:{[extensionName]:settings},saveSettingsDebounced:()=>fixture.saves++,getSillyTavernContext:()=>({})});
-document.querySelector('#blai-purifier-popup').style.display='grid';
-renderTags();updateToolbarUI();bindAiSettingsEvents();fonts.bindUiFontScaleEvents();
+const hostExtensions=await import('/extensions.js');hostExtensions.extension_settings[extensionName]=settings;
+const eventTypes=Object.fromEntries(['APP_READY','CHAT_CHANGED','MESSAGE_RECEIVED','MESSAGE_EDITED','MESSAGE_UPDATED','CHARACTER_MESSAGE_RENDERED','USER_MESSAGE_RENDERED','MESSAGE_SWIPED','MESSAGE_DELETED','GENERATION_STARTED','GENERATION_ENDED','GENERATION_STOPPED','STREAM_TOKEN_RECEIVED'].map(name=>[name,'fixture:'+name]));
+const eventSource={on(){},off(){},makeFirst(){},makeLast(){}};
+initAppContext({extension_settings:{[extensionName]:settings},saveSettingsDebounced:()=>{if(fixture.failSave)throw new Error('fixture save failure');fixture.saves++;},getSillyTavernContext:()=>({}),eventSource,event_types:eventTypes,chat,saveChat:()=>{},getStreamingProcessor:()=>null});
+fixture.saveSettings=()=>{if(fixture.failSave)throw new Error('fixture save failure');fixture.saves++;};
+bindEvents();
+shell.annotateTauriMobileSurfaces();
+fixture.renderTemplate=async()=>{const text=await(await fetch('/templates/purifier.html')).text();return text.replace('{{logoUrl}}','/images/veridis-logo.png');};
 document.querySelector('#blai-ai-temperature').value=settings.aiRewrite.temperature;
 document.querySelector('#blai-ai-prompt').value=settings.aiRewrite.promptTemplate;
-document.addEventListener('click',e=>{const nav=e.target.closest('[data-page-target]');if(nav)shell.showResponsivePage(nav.dataset.pageTarget)});
-document.querySelector('#blai-close-btn').onclick=()=>document.querySelector('#blai-purifier-popup').style.display='none';
-document.querySelector('#blai-preset-save').onclick=()=>fixture.saves++;
-document.querySelector('#blai-preset-select').onchange=e=>applyPresetByName(e.target.value);
+document.getElementById('blai-wand-btn').click();
 for(const id of ['outside-left','outside-right'])document.getElementById(id).onclick=()=>fixture.sideClicks++;
 fixture.ready=true;
 </script></body></html>`;
@@ -77,9 +82,12 @@ fixture.ready=true;
 const server = http.createServer((req, res) => {
     const pathname = decodeURIComponent(new URL(req.url, 'http://fixture').pathname);
     if (pathname === '/') { res.setHeader('Content-Type', 'text/html;charset=utf-8'); return res.end(fixture); }
+    if (pathname === '/jquery.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(jquery); }
+    if (pathname === '/extensions.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end('export const extension_settings = {};'); }
+    if (pathname === '/script.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end('export const saveSettingsDebounced = () => window.fixture?.saveSettings?.();'); }
     const file = path.resolve(root, '.' + pathname);
     if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404); return res.end(); }
-    res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'image/png');
+    res.setHeader('Content-Type', /\.m?js$/.test(file) ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'image/png');
     res.end(fs.readFileSync(file));
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -109,8 +117,8 @@ try {
             return {left:r.left,width:r.width,right:r.right,chatLeft:chat.left,chatWidth:chat.width,rootOverflow:root.scrollWidth-root.clientWidth,panelOverflow:active.scrollWidth-active.clientWidth,navVisible:getComputedStyle(nav).display!=='none',scrollable:active.scrollHeight>active.clientHeight};
         });
         assert.equal(dims.rootOverflow,0,JSON.stringify(dims)); assert.equal(dims.panelOverflow,0,JSON.stringify(dims)); assert.equal(dims.scrollable,true);
-        if(width>600){const expectedWidth=Math.min(1040,width-32);assert.ok(Math.abs(dims.width-expectedWidth)<=1);assert.ok(Math.abs(dims.left-(width-expectedWidth)/2)<=1);if(width>=1200){await page.locator('#outside-left').click();await page.locator('#outside-right').click();}}
-        else {assert.equal(dims.left,0);assert.equal(dims.width,width);}
+        if(width>600){const expectedWidth=Math.min(1040,width-32);assert.ok(Math.abs(dims.width-expectedWidth)<=1);assert.ok(Math.abs(dims.left-(width-expectedWidth)/2)<=1);}
+        else {const expectedWidth=width-16;assert.ok(Math.abs(dims.width-expectedWidth)<=1);assert.ok(Math.abs(dims.left-(width-expectedWidth)/2)<=1);assert.ok(dims.left>=7);}
         assert.equal(dims.navVisible,expected==='mobile');
         const nav = expected==='mobile'?'.bottom-nav':'.rail';
         await page.locator(nav+' [data-page-target="ai"]').click();
@@ -255,7 +263,7 @@ try {
                 await page.mouse.move(dims.x+5,dims.y+100);await page.mouse.wheel(0,500);
                 await page.waitForFunction(()=>{const el=document.querySelector('.page-panel.active');return el.scrollTop>=Math.min(500,el.scrollHeight-el.clientHeight)-1});
                 savedPositions[id]=await panel.evaluate(el=>el.scrollTop);
-                const header=await page.locator('.blai-global-header').boundingBox();assert.equal(Math.round(header.y),0);
+                const header=await page.locator('.blai-global-header').boundingBox();const panelBox=await page.locator('#blai-purifier-popup').boundingBox();assert.ok(Math.abs(header.y-panelBox.y)<=2);assert.ok(header.y>=0);
                 if(theme==='light'&&width===1920&&id==='overview'){
                     await panel.evaluate(el=>el.scrollTop=0);savedPositions[id]=0;
                     await page.screenshot({path:path.join(output,'right-scrollbar-desktop.png')});
@@ -336,16 +344,113 @@ try {
     await page.waitForFunction(()=>!matchMedia('(max-width: 600px)').matches);
     await page.screenshot({path:path.join(output,'dark-1920.png')});check('dark theme retains readable original tokens');
     const saves=await page.evaluate(()=>fixture.saves);await page.locator('#blai-preset-save').click();assert.equal(await page.evaluate(()=>fixture.saves),saves+1);
-    await page.locator('#blai-close-btn').click();assert.equal(await page.locator('#blai-purifier-popup').isVisible(),false);
-    await page.evaluate(()=>{document.getElementById('sheld').style.width='800px';document.getElementById('sheld').style.left='200px';document.getElementById('blai-purifier-popup').style.display='grid';});
-    await page.waitForTimeout(80);
-    const fixed=await page.locator('#blai-purifier-popup').boundingBox();
-    assert.equal(Math.round(fixed.width),1040);assert.equal(Math.round(fixed.x),440);check('save, close and reopen preserve fixed centered window');
+    const overlay=page.locator('#blai-main-panel-overlay'),panel=page.locator('#blai-purifier-popup');
+    await page.locator('#blai-close-btn').click();await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    assert.equal(await overlay.evaluate(el=>getComputedStyle(el).display),'none');assert.equal(await panel.isVisible(),false);
+    check('explicit close removes the overlay from display');
+    assert.equal(await page.locator('#blai-diff-modal').evaluate(el=>!!el.closest('#blai-main-panel-overlay')),false);
+    check('standalone chat Diff dialog is outside the main overlay');
+    await page.locator('#open-chat-diff').click();
+    await page.waitForFunction(()=>getComputedStyle(document.getElementById('blai-diff-modal')).display!=='none');
+    await page.waitForFunction(()=>document.getElementById('blai-diff-modal-content')?.textContent.trim().length>0);
+    assert.equal(await overlay.isVisible(),false);assert.equal(await page.locator('#blai-diff-modal').isVisible(),true);
+    check('chat Diff opens independently while the main panel and backdrop are closed');
+    await page.locator('#blai-diff-modal-close').click();
+    await page.waitForFunction(()=>getComputedStyle(document.getElementById('blai-diff-modal')).display==='none');
+    await page.evaluate(()=>{document.getElementById('sheld').style.width='800px';document.getElementById('sheld').style.left='200px';});
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    const openedShell=await page.evaluate(()=>{
+        const overlay=document.getElementById('blai-main-panel-overlay'),panel=document.getElementById('blai-purifier-popup'),style=getComputedStyle(overlay),rect=panel.getBoundingClientRect();
+        return {hidden:overlay.hidden,overlayDisplay:style.display,background:style.backgroundColor,panelDisplay:getComputedStyle(panel).display,width:rect.width,left:rect.left,top:rect.top,height:rect.height,viewportWidth:innerWidth,viewportHeight:innerHeight,ttOverlay:overlay.getAttribute('data-tt-mobile-surface'),ttPanel:panel.getAttribute('data-tt-mobile-surface')};
+    });
+    assert.equal(openedShell.hidden,false);assert.equal(openedShell.overlayDisplay,'flex');assert.match(openedShell.background,/rgba\(0, 0, 0, 0\.55\)/);
+    assert.equal(openedShell.panelDisplay,'grid');assert.equal(Math.round(openedShell.width),1040);assert.ok(Math.abs(openedShell.left-(openedShell.viewportWidth-1040)/2)<=1);
+    assert.ok(openedShell.height<=900&&openedShell.top>=16);assert.equal(openedShell.ttOverlay,'backdrop');assert.equal(openedShell.ttPanel,'free-window');
+    check('wand opens a centered 1040px free window over a dim backdrop with TT free-window annotation');
+    await page.locator('#blai-responsive-title').click();assert.equal(await overlay.isVisible(),true);
+    await overlay.click({position:{x:2,y:2}});await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    check('click inside keeps the panel open; clicking the backdrop closes it');
+    await page.locator('#blai-wand-btn').click();
+    const foreignKeys=await page.evaluate(()=>{
+        // Myriad Knots uses a body-level Shadow DOM host. Reproduce that event boundary.
+        const host=document.createElement('div');host.id='qqj-panel-host';
+        const shadow=host.attachShadow({mode:'open'});
+        shadow.innerHTML='<button>记忆面板</button>';
+        document.body.append(host);const button=shadow.querySelector('button');button.focus();
+        const keys=['Escape','Tab'].map(key=>{
+            const event=new KeyboardEvent('keydown',{key,bubbles:true,composed:true,cancelable:true});
+            button.dispatchEvent(event);return {key,prevented:event.defaultPrevented};
+        });
+        const result={keys,focus:document.activeElement===host,open:fixture.shell.isMainPanelOpen()};
+        host.remove();return result;
+    });
+    assert.deepEqual(foreignKeys,{keys:[{key:'Escape',prevented:false},{key:'Tab',prevented:false}],focus:true,open:true});
+    check('foreign Shadow DOM memory panel retains Escape, Tab and focus ownership');
+    await page.locator('#blai-close-btn').click();
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('.bottom-nav [data-page-target="ai"]').click();await page.locator('#blai-ai-generation-open').click();
+    await page.waitForFunction(()=>document.getElementById('blai-ai-generation-modal').classList.contains('blai-is-open'));
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.getElementById('blai-ai-generation-modal').classList.contains('blai-is-open'));
+    assert.equal(await overlay.isVisible(),true);
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    check('Esc closes the child dialog first and only then closes the main panel');
+    await page.setViewportSize({width:1920,height:1080});
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    await page.evaluate(()=>{const placeholder=document.createElement('div');placeholder.id='dialogue_popup';placeholder.style.cssText='display:block;position:fixed;width:0;height:0;overflow:hidden;top:0;left:0';document.body.append(placeholder);});
+    await page.locator('#blai-close-btn').click();await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    await page.evaluate(()=>document.getElementById('dialogue_popup')?.remove());
+    check('explicit close is not blocked by a zero-size host popup placeholder');
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    await page.evaluate(()=>{const settings=fixture.settings;settings.rules=JSON.parse(JSON.stringify(settings.presets[settings.activePreset].rules||[]));fixture.failSave=true;settings.rules.pop();});
+    const failedRuleCount=await page.evaluate(()=>fixture.settings.rules.length),errorBaseline=errors.length;
+    page.once('dialog',dialog=>dialog.dismiss());
+    await overlay.click({position:{x:2,y:2}});await page.waitForTimeout(100);
+    assert.equal(await overlay.isVisible(),true);
+    await page.evaluate(()=>{fixture.failSave=false;});
+    assert.ok(errors.length>errorBaseline,'failed rollback should be surfaced');
+    errors.length=errorBaseline;
+    assert.equal(await page.evaluate(()=>fixture.settings.rules.length),failedRuleCount+1);
+    check('failed rollback preserves the open panel and does not hide the error state');
+    await page.locator('#blai-close-btn').focus();
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    const presetRuleCount=await page.evaluate(()=>{const settings=fixture.settings;settings.rules=JSON.parse(JSON.stringify(settings.presets[settings.activePreset].rules||[]));settings.rules.pop();return settings.presets[settings.activePreset].rules.length;});
+    page.once('dialog',dialog=>dialog.dismiss());
+    await overlay.click({position:{x:2,y:2}});await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    assert.equal(await page.evaluate(()=>fixture.settings.rules.length),presetRuleCount);
+    check('backdrop close discard uses the existing rollback path');
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    const savesBeforeClose=await page.evaluate(()=>fixture.saves);
+    const dirtyRuleCount=await page.evaluate(()=>{const settings=fixture.settings;settings.rules=JSON.parse(JSON.stringify(settings.presets[settings.activePreset].rules||[]));settings.rules.pop();return settings.rules.length;});
+    page.once('dialog',dialog=>dialog.accept());
+    await overlay.click({position:{x:2,y:2}});await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    assert.equal(await page.evaluate(()=>fixture.settings.presets[fixture.settings.activePreset].rules.length),dirtyRuleCount);
+    assert.equal(await page.evaluate(()=>fixture.saves),savesBeforeClose+1);
+    check('backdrop close save uses the existing preset save path');
+    await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>matchMedia('(max-width: 600px)').matches);
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    const mobileShell=await page.evaluate(()=>{const overlay=document.getElementById('blai-main-panel-overlay'),panel=document.getElementById('blai-purifier-popup'),rect=panel.getBoundingClientRect();return{width:rect.width,left:rect.left,right:innerWidth-rect.right,top:rect.top,bottom:innerHeight-rect.bottom,nav:getComputedStyle(panel.querySelector('.bottom-nav')).display,overlayDisplay:getComputedStyle(overlay).display};});
+    assert.ok(Math.abs(mobileShell.width-374)<=1);assert.ok(mobileShell.left>=7&&mobileShell.right>=7);assert.ok(mobileShell.top>=7&&mobileShell.bottom>=7);
+    assert.equal(mobileShell.nav,'grid');assert.equal(mobileShell.overlayDisplay,'flex');
+    await overlay.click({position:{x:2,y:2}});await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    check('390px mobile keeps visible margins, bounded viewport and the bottom navigation');
+    await page.setViewportSize({width:1920,height:1080});await page.waitForFunction(()=>!matchMedia('(max-width: 600px)').matches);
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    const fixed=await panel.boundingBox();assert.equal(Math.round(fixed.width),1040);assert.equal(Math.round(fixed.x),440);check('save, close and reopen preserve fixed centered window');
     await page.evaluate(()=>{document.getElementById('sheld').style.width='540px';document.getElementById('sheld').style.left='40px';});
     await page.waitForTimeout(80);
-    assert.deepEqual(await page.locator('#blai-purifier-popup').boundingBox(),fixed);check('host chat column changes do not resize or move plugin window');
+    assert.deepEqual(await panel.boundingBox(),fixed);check('host chat column changes do not resize or move plugin window');
     await page.evaluate(()=>{document.getElementById('sheld').remove();});
-    assert.deepEqual(await page.locator('#blai-purifier-popup').boundingBox(),fixed);check('window works without a host chat column or layout binding');
+    assert.deepEqual(await panel.boundingBox(),fixed);check('window works without a host chat column or layout binding');
+    await page.evaluate(async()=>{await fixture.shell.setupUI(fixture.renderTemplate,'/fixture');});
+    await page.waitForFunction(()=>document.querySelectorAll('#blai-main-panel-overlay').length===1);
+    const resetShell=await page.evaluate(()=>{const overlays=document.querySelectorAll('#blai-main-panel-overlay'),overlay=overlays[0];return{count:overlays.length,hidden:overlay.hidden,display:getComputedStyle(overlay).display,bodyOpen:document.body.classList.contains('blai-main-panel-open'),panelDisplay:getComputedStyle(document.getElementById('blai-purifier-popup')).display};});
+    assert.equal(resetShell.count,1);assert.equal(resetShell.hidden,true);assert.equal(resetShell.display,'none');assert.equal(resetShell.bodyOpen,false);assert.equal(resetShell.panelDisplay,'none');
+    await page.locator('#blai-wand-btn').click();await page.waitForFunction(()=>!document.getElementById('blai-main-panel-overlay').hidden);
+    assert.equal(await page.locator('#blai-main-panel-overlay').count(),1);
+    await page.locator('#blai-close-btn').click();await page.waitForFunction(()=>document.getElementById('blai-main-panel-overlay').hidden);
+    check('repeated setupUI removes the stale overlay, body lock and duplicate panels');
     assert.deepEqual(errors,[]);check('no browser JavaScript errors');
 } catch(error) { results.push({passed:false,error:error.stack}); await page.screenshot({path:path.join(output,'failure.png')});throw error; }
-finally { fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({results,errors,realModelCalls:0,host:'isolated fixture; native template, CSS and modules; minimal jQuery facade'},null,2));await browser.close();server.close(); }
+finally { fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({results,errors,realModelCalls:0,host:'isolated fixture; native template, CSS, modules and jQuery; simulated host APIs'},null,2));await browser.close();server.close(); }

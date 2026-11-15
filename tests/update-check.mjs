@@ -77,3 +77,15 @@ test('unknown source, older remote, and changed checkout do not update or switch
  bindUpdateStatusEvents(()=>{});await initializeUpdateStatus({versionInfo:info});await f.update();
  assert.equal(requests.includes('/api/extensions/update'),false);assert.equal(requests.includes('/api/extensions/switch'),false);
 });
+
+test('consolidated main installation checks and updates main without switching',async()=>{
+ const mainModule=await import('../src/update/status.js?main-installation');
+ const f=fixture(),requests=[]; const mainInfo={...info,currentBranchName:'main'};let reloads=0;
+ initAppContext({veridisExtensionFolderName:'Veridis-Rewrite',readExtensionManifest:async()=>({version:'3.5.0-fix.39'}),getSillyTavernContext:()=>({getRequestHeaders:()=>({})})});
+ globalThis.location={reload(){reloads++;}};
+ globalThis.fetch=async(url,options)=>{requests.push(url);return {ok:true,json:async()=>url==='/api/extensions/version'?mainInfo:{version:'3.5.0-fix.40'}};};
+ mainModule.bindUpdateStatusEvents(()=>{});await mainModule.initializeUpdateStatus({versionInfo:mainInfo});
+ assert.match(requests[0],/qiyuebuyuan1993\/Veridis-Rewrite\/main\/manifest.json/);
+ await f.update();assert.equal(reloads,1);
+ assert.deepEqual(requests.slice(1),['/api/extensions/version','/api/extensions/update']);
+});

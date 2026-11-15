@@ -2,7 +2,7 @@
 import { extensionName } from './settings/defaults.js';
 import { getAppContext } from './host/appContext.js';
 import { clearPendingShujukuRewrite } from './shujuku/realtime.js';
-import { showResponsivePage, updateLegacyPurifierWarning } from './ui/shell.js';
+import { isMainPanelOpen, setMainPanelOpen, showResponsivePage, updateLegacyPurifierWarning } from './ui/shell.js';
 import { applyPresetByName, hasActivePresetUnsavedChanges } from './presets/application.js';
 import { refreshCharacterBindingUI, updateToolbarUI } from './presets/view.js';
 import { bindPresetEvents } from './presets/events.js';
@@ -23,15 +23,83 @@ import { bindFeedbackEvents } from './feedback/events.js';
 import { bindTourEvents, offerMainTourFirstUse } from './ui/tour.js';
 import { bindUiFontScaleEvents } from './ui/fontScale.js';
 
+const childModalSelector = [
+    '.blai-modal-shell',
+    '#blai-deep-clean-workspace',
+    '#blai-feedback-workspace',
+    '#blai-loading-overlay',
+    '#blai-tour-layer',
+    '#blai-batch-popup',
+    '#blai-scope-tags-modal',
+    '#blai-diff-modal',
+    '#blai-diff-related-modal',
+    '#blai-rule-transfer-modal',
+    '#blai-rule-search-modal',
+    '#blai-preset-import-choice-modal',
+    '#blai-scope-tag-editor-modal',
+    'dialog[open]',
+    '#dialogue_popup:not([hidden])',
+    '.dialogue_popup:not([hidden])',
+    '.popup[open]',
+].join(', ');
+
+function isVisibleModalElement(element) {
+    if (!(element instanceof HTMLElement) || element.hidden) return false;
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+}
+
+function hasVisibleChildModal() {
+    return Array.from(document.querySelectorAll(childModalSelector)).some(isVisibleModalElement);
+}
+
+function getMainPanelFocusables() {
+    const panel = document.getElementById('blai-purifier-popup');
+    if (!panel) return [];
+    return Array.from(panel.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => !element.hidden
+            && element.getAttribute('aria-hidden') !== 'true'
+            && element.getClientRects().length > 0
+            && window.getComputedStyle(element).visibility !== 'hidden');
+}
+
 export function bindEvents() {
     const { extension_settings, saveSettingsDebounced, eventSource } = getAppContext();
+    let lastMainPanelFocus = null;
+    const closePurifier = () => {
+        if (!isMainPanelOpen()) return;
+        if (hasActivePresetUnsavedChanges()) {
+            if (confirm(`预设 "${extension_settings[extensionName].activePreset}" 有未保存的规则或 AI 生成限制改动，是否保存？\n点击【确定】保存，点击【取消】直接关闭放弃改动。`)) {
+                $('#blai-preset-save').click();
+            } else {
+                // 放弃保存时回滚到已保存状态，避免脏数据残留。
+                applyPresetByName(extension_settings[extensionName].activePreset, { skipRender: true });
+            }
+        }
+        closeRuleSearchModal({ reset: true });
+        closeScopeTagsModal({ reset: true });
+        setMainPanelOpen(false);
+        const focusTarget = lastMainPanelFocus;
+        lastMainPanelFocus = null;
+        if (focusTarget?.isConnected) {
+            try { focusTarget.focus({ preventScroll: true }); } catch { focusTarget.focus?.(); }
+        }
+    };
     const openPurifier = () => {
+        const wasOpen = isMainPanelOpen();
+        if (!wasOpen) lastMainPanelFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         updateToolbarUI();
         updateLegacyPurifierWarning();
         showResponsivePage('overview');
         renderTags();
         renderScopeTagsModal();
-        $('#blai-purifier-popup').css('display', 'grid').hide().fadeIn(200);
+        setMainPanelOpen(true);
+        if (!wasOpen) {
+            const closeButton = document.getElementById('blai-close-btn');
+            try { closeButton?.focus({ preventScroll: true }); } catch { closeButton?.focus?.(); }
+        }
         offerMainTourFirstUse();
     };
     bindComposerButtonAiRewriteEvent(eventSource);
@@ -84,7 +152,7 @@ export function bindEvents() {
         updateLegacyPurifierWarning();
         const legacyEntry = document.getElementById('bl-extension-settings-entry') || document.getElementById('bl-wand-btn');
         if (legacyEntry) {
-            $('#blai-purifier-popup').fadeOut(120);
+            closePurifier();
             legacyEntry.scrollIntoView({ behavior: 'smooth', block: 'center' });
             legacyEntry.classList.remove('blai-legacy-target-flash');
             void legacyEntry.offsetWidth;
@@ -94,17 +162,37 @@ export function bindEvents() {
     });
 
     $(document).off('click', '#blai-close-btn').on('click', '#blai-close-btn', () => {
-        if (hasActivePresetUnsavedChanges()) {
-            if (confirm(`预设 "${extension_settings[extensionName].activePreset}" 有未保存的规则或 AI 生成限制改动，是否保存？\n点击【确定】保存，点击【取消】直接关闭放弃改动。`)) {
-                $('#blai-preset-save').click();
-            } else {
-                // 放弃保存时回滚到已保存状态，避免脏数据残留。
-                applyPresetByName(extension_settings[extensionName].activePreset, { skipRender: true });
-            }
+        closePurifier();
+    });
+
+    $(document).off('click', '#blai-main-panel-overlay').on('click', '#blai-main-panel-overlay', function(e) {
+        const overlay = document.getElementById('blai-main-panel-overlay');
+        if (overlay && e.target === overlay) closePurifier();
+    });
+
+    $(document).off('keydown.blai-main-panel').on('keydown.blai-main-panel', (event) => {
+        // Shadow-DOM panels (including Myriad Knots) own their own keyboard events.
+        if (event.defaultPrevented || event.isDefaultPrevented?.() || event.isComposing
+            || !document.getElementById('blai-purifier-popup')?.contains(event.target)) return;
+        if (!isMainPanelOpen() || hasVisibleChildModal()) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closePurifier();
+            return;
         }
-        closeRuleSearchModal({ reset: true });
-        closeScopeTagsModal({ reset: true });
-        $('#blai-purifier-popup').fadeOut(200);
+        if (event.key !== 'Tab') return;
+        const panel = document.getElementById('blai-purifier-popup');
+        const focusables = getMainPanelFocusables();
+        if (!panel || !focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+            event.preventDefault();
+            first.focus();
+        }
     });
     const settings = extension_settings[extensionName];
     normalizeZhVariantSettings(settings);

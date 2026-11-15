@@ -87,6 +87,10 @@ export function validateAutomaticAiRewriteContent(taskLike, options = {}) {
         chat,
     });
     if (!lifecycleValidation.ok) return lifecycleValidation;
+    // A following turn can stabilize this floor for memory plugins.
+    if (lifecycleValidation.session.messageId !== chat.length - 1) {
+        return { ok: false, reason: 'target-is-now-history' };
+    }
 
     const identity = lifecycleValidation.session.contentIdentity;
     if (!identity) return { ok: false, reason: 'content-identity-missing' };
