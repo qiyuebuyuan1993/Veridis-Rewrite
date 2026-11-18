@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Veridis",
-    "version": "3.5.0-fix.44",
+    "version": "3.5.0-fix.45",
     "description": "在关键词净化基础上增加可选 OpenAI 兼容局部改写。",
-    "update_note": "修复44：AI 请求失败时保留正文并显示失败原因。"
+    "update_note": "修复45：新增回抄风险保留原句开关，反馈与诊断改为居中弹窗。"
 }
