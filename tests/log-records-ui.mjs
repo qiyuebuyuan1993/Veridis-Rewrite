@@ -172,7 +172,20 @@ try {
     }
     await page.evaluate(()=>{logView.openFeedbackWorkspace('runtime-log');logView.renderRuntimeLog();});
     assert.equal(await page.evaluate(()=>{const r=document.getElementById('blai-feedback-workspace').getBoundingClientRect();return !!document.elementFromPoint(r.x+r.width/2,r.y+25)?.closest('#blai-feedback-workspace')}),true);
-    check('feedback workspace remains above plugin main window');
+    for (const width of [390, 1920]) {
+        await page.setViewportSize({width, height:900});
+        await page.evaluate(() => logView.openFeedbackWorkspace('runtime-log'));
+        const dialog = page.locator('.blai-feedback-dialog');
+        const bounds = await dialog.boundingBox();
+        assert.ok(bounds.x > 0 && bounds.x + bounds.width < width);
+        assert.ok(Math.abs(bounds.x * 2 + bounds.width - width) < 2);
+        await dialog.locator('#blai-feedback-workspace-title').click();
+        assert.ok(await dialog.isVisible());
+        await page.mouse.click(2, 2);
+        assert.equal(await dialog.isVisible(), false);
+        assert.ok(await page.locator('#blai-purifier-popup').isVisible());
+    }
+    check('centered feedback window closes independently at desktop and phone widths');
     assert.deepEqual(errors,[]);
 } finally {
     fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({results,errors,realModelCalls:0,host:'isolated Chromium fixture; actual template/CSS/log modules and delegated copy handler'},null,2));

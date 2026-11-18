@@ -650,3 +650,14 @@ for (const manual of [true, false]) {
         });
     }
 }
+for (const enabled of [true, false]) test(`copy risk setting selects original or model text: ${enabled}`, () => {
+    const target = '面板上，有一行用激光刻下的、如今已与涂层融为一体的银色花体铭文，';
+    const tail = '“Archive”。';
+    const model = '面板上有一行用激光刻下的银色花体铭文，“Archive”，已与涂层融为一体。';
+    const h = harness('string', target + tail);
+    h.settings.keepOriginalOnCopyRisk = enabled;
+    h.settings.rules[0].subRules[0].targets = ['融为一体'];
+    const task = h.build();
+    applyAcceptedRewrites(task, new Map([[task.items[0].id, model]]));
+    assert.equal(h.msg.mes, (enabled ? target : model) + tail);
+});
