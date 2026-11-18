@@ -131,6 +131,9 @@ export function bindFeedbackEvents() {
     $(document).off('click', '#blai-tools-feedback-open').on('click', '#blai-tools-feedback-open', () => {
         showWorkspaceView('runtime-log');
     });
+    $(document).off('click', '#blai-feedback-workspace').on('click', '#blai-feedback-workspace', function(event) {
+        if (event.target === this) $('#blai-feedback-close').trigger('click');
+    });
     $(document).off('click', '#blai-feedback-close').on('click', '#blai-feedback-close', () => {
         invalidateFeedbackPreview();
         clearRenderedFeedbackPreview({ preserveSubmissionStatus: true });
