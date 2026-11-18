@@ -17,6 +17,7 @@ export function isAiRewriteResponseFormatError(error) {
 
 export function parseAiRewriteResponseObject(rawText) {
     const candidate = String(rawText || '').trim();
+    if (candidate.startsWith('[API 错误]')) throw new AiRewriteResponseFormatError(candidate.slice(0, 400));
     if (!/^\{[\s\S]*\}$/.test(candidate)) {
         throw new AiRewriteResponseFormatError('API 返回不是单个 JSON 对象', null, {
             reason: 'not-json-object',
