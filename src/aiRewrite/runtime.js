@@ -571,7 +571,7 @@ export function markAiRewriteFinalCleanseReady(payload) {
     if (hadPendingApply) return true;
 
     if (validation.session.requestState !== 'idle') {
-        if (['scheduled', 'running', 'succeeded'].includes(validation.session.requestState)) {
+        if (['scheduled', 'running', 'succeeded', 'failed'].includes(validation.session.requestState)) {
             recordAiRewriteDebug('final-cleanse-skip-request', {
                 index,
                 branchKey,
@@ -1212,15 +1212,8 @@ async function runAiRewriteWithLease(payload, options = {}) {
         if (task.automatic === true) generationLifecycle.markRequestFailed(task.generationId, err?.message || 'request-failed');
         logger.warn('AI 改写失败', err);
         recordAiRewriteDebug('run-error', { generationId: task.generationId || '', reason: err?.message || '请求未完成' }, 'warn');
-        if (isTaskStillFresh(task)) {
-            if (!hasFinalCleanseAfterTaskStart(task)) {
-                deferAiRewriteFallbackUntilFinalCleanse(task, 'ai-failed');
-                return;
-            }
-            const fallbackResult = applyAiProgramFallback(task, 'ai-failed');
-            if (fallbackResult.applied) return { status: 'fallback-applied', fallbackResult };
-        }
         notifyAiRewriteStatus('error', 'AI 改写失败', err?.message || '请求未完成', { timeOut: 8000, extendedTimeOut: 16000 });
+        return { status: 'failed', reason: err?.message || '请求未完成' };
     } finally {
         if (rewriteState.runningTask === task) rewriteState.runningTask = null;
         if (isSameAiRewriteTask(rewriteState.statusDismissedTask, task)) {
