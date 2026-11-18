@@ -31,6 +31,19 @@ test('intermediate AI stage and invalid offsets cannot write final body',()=>{
  assert.equal(captureFragmentEdit(f.chat,f.msg,'program',{...f.change,deletedText:'好',insertedText:'新'}).newStart,2);
  assert.equal(captureFragmentEdit(f.chat,f.msg,'program',{...f.change,newStart:-1}),null);
 });
+test('a combined full-view fragment restores from original to the correct final swipe offset',()=>{
+ const f=fixture();
+ const original='旧。旧。', intermediate='好。好。', final='好。更长。';
+ f.msg.mes=final;f.msg.swipes[0]=final;
+ writeMessageDiffAiStage(f.msg,'swipe:0',original,intermediate,final);
+ const change={oldStart:2,oldEnd:3,newStart:2,newEnd:4,deletedText:'旧',insertedText:'更长'};
+ assert.equal(captureFragmentEdit(f.chat,f.msg,'combined',{...change,deletedText:'好'}),null);
+ const draft=captureFragmentEdit(f.chat,f.msg,'combined',change);
+ assert.ok(draft);assert.equal(applyFragmentEdit(f.chat,draft,draft.deletedText),true);
+ assert.equal(f.msg.mes,'好。旧。');
+ assert.deepEqual(f.msg.swipes,['好。旧。','其他']);
+ assert.equal(getMessageDiffMeta(f.msg).aiMes,intermediate);
+});
 test('insert-only and delete-only fragments can be restored',()=>{
  for(const [oldText,newText,start,end,deletedText,insertedText] of [['甲乙','甲新乙',1,2,'','新'],['甲旧乙','甲乙',1,1,'旧','']]){
  const msg={mes:newText},chat=[msg];writeMessageDiffAiStage(msg,'main',oldText,null,newText);

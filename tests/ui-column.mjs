@@ -350,11 +350,31 @@ try {
     check('explicit close removes the overlay from display');
     assert.equal(await page.locator('#blai-diff-modal').evaluate(el=>!!el.closest('#blai-main-panel-overlay')),false);
     check('standalone chat Diff dialog is outside the main overlay');
+    const recorded = await page.evaluate(async () => {
+        const {writeMessageDiffAiStage}=await import('/src/diff/messageMeta.js');
+        const original='<content>甲。保留段落。尾声丁。</content>';
+        const intermediate=original.replace('甲','乙');
+        const final=intermediate.replace('丁','丙');
+        const msg=fixture.chat[0];
+        msg.mes=final;msg.swipes[0]=final;
+        writeMessageDiffAiStage(msg,'swipe:0',original,intermediate,final);
+        fixture.settings.diffViewMode='full';
+        return JSON.stringify(msg);
+    });
     await page.locator('#open-chat-diff').click();
     await page.waitForFunction(()=>getComputedStyle(document.getElementById('blai-diff-modal')).display!=='none');
     await page.waitForFunction(()=>document.getElementById('blai-diff-modal-content')?.textContent.trim().length>0);
     assert.equal(await overlay.isVisible(),false);assert.equal(await page.locator('#blai-diff-modal').isVisible(),true);
     check('chat Diff opens independently while the main panel and backdrop are closed');
+    const fullPreview=page.locator('#blai-diff-modal-content .blai-diff-full-modified');
+    await fullPreview.waitFor();
+    assert.equal(await fullPreview.count(),1);
+    assert.equal((await fullPreview.textContent()).split('保留段落。').length,2);
+    await page.locator('#blai-diff-mode-toggle').click();
+    await page.locator('#blai-diff-modal-content [data-blai-diff-section="ai"]').first().waitFor();
+    assert.ok(await page.locator('#blai-diff-modal-content [data-blai-diff-section="program"]').count());
+    assert.equal(await page.evaluate(()=>JSON.stringify(fixture.chat[0])),recorded);
+    check('two changed stages render one full preview and separate snippets without touching the chat');
     await page.locator('#blai-diff-modal-close').click();
     await page.waitForFunction(()=>getComputedStyle(document.getElementById('blai-diff-modal')).display==='none');
     await page.evaluate(()=>{document.getElementById('sheld').style.width='800px';document.getElementById('sheld').style.left='200px';});
@@ -443,6 +463,55 @@ try {
     assert.deepEqual(await panel.boundingBox(),fixed);check('host chat column changes do not resize or move plugin window');
     await page.evaluate(()=>{document.getElementById('sheld').remove();});
     assert.deepEqual(await panel.boundingBox(),fixed);check('window works without a host chat column or layout binding');
+    for (const width of [1920,390]) {
+        await page.setViewportSize({width,height:900});
+        await page.locator('.page-panel.active').evaluate(el=>{el.scrollTop=0;});
+        await page.locator('.blai-home-card .blai-rule-edit').first().click();
+        const ruleList=page.locator('#blai-edit-subrules-container');
+        const bounds=await ruleList.boundingBox();
+        const metrics=await ruleList.evaluate(el=>({
+            range:el.scrollHeight-el.clientHeight,
+            gutter:el.offsetWidth-el.clientWidth,
+            scrollbarWidth:getComputedStyle(el,'::-webkit-scrollbar').width
+        }));
+        assert.ok(metrics.range>60 && metrics.gutter>=12,JSON.stringify(metrics));
+        assert.equal(metrics.scrollbarWidth,'14px');
+        const footer=await page.locator('#blai-edit-save').boundingBox();
+        const x=bounds.x+bounds.width-metrics.gutter/2;
+        await page.mouse.move(x,bounds.y+18);await page.mouse.down();
+        await page.mouse.move(x,bounds.y+bounds.height-14,{steps:8});await page.mouse.up();
+        assert.ok(await ruleList.evaluate(el=>el.scrollTop>0));
+        assert.deepEqual(await page.locator('#blai-edit-save').boundingBox(),footer);
+        await page.locator('#blai-edit-cancel-x').click();
+        check(width+'px collection editor has a draggable right scrollbar and fixed footer');
+
+        const header=page.locator('.blai-global-header');
+        const headerY=(await header.boundingBox()).y;
+        await page.locator('#blai-open-new-rule-btn').click();
+        await page.locator('#blai-edit-name').fill('新增合集验证 '+width);
+        await page.locator('#blai-add-subrule-btn').click();
+        await page.locator('#blai-modal-sub-mode').selectOption('text');
+        await page.locator('#blai-modal-sub-target').fill('测试查找词');
+        await page.locator('#blai-modal-sub-rep').fill('测试替换');
+        await page.locator('#blai-modal-sub-save').click();
+        await page.locator('#blai-subrule-edit-modal').waitFor({state:'hidden'});
+        await page.locator('#blai-edit-save').click();
+        await page.locator('#blai-rule-edit-modal').waitFor({state:'hidden'});
+        await page.waitForFunction(()=>{
+            const active=document.querySelector('.page-panel.active');
+            const last=[...active.querySelectorAll('.blai-home-card')].at(-1);
+            return last && active.scrollTop>0 && last.getBoundingClientRect().bottom<=active.getBoundingClientRect().bottom+1;
+        });
+        assert.equal(await panel.evaluate(el=>{el.scrollTop=180;return el.scrollTop;}),0);
+        assert.ok(Math.abs((await header.boundingBox()).y-headerY)<1);
+        page.once('dialog',dialog=>dialog.accept());
+        await overlay.click({position:{x:2,y:2}});
+        await overlay.waitFor({state:'hidden'});
+        await page.locator('#blai-wand-btn').click();
+        assert.equal(await panel.evaluate(el=>el.scrollTop),0);
+        assert.ok(Math.abs((await header.boundingBox()).y-headerY)<1);
+        check(width+'px save reveals the new card inside the page and reopening keeps the header in place');
+    }
     await page.evaluate(async()=>{await fixture.shell.setupUI(fixture.renderTemplate,'/fixture');});
     await page.waitForFunction(()=>document.querySelectorAll('#blai-main-panel-overlay').length===1);
     const resetShell=await page.evaluate(()=>{const overlays=document.querySelectorAll('#blai-main-panel-overlay'),overlay=overlays[0];return{count:overlays.length,hidden:overlay.hidden,display:getComputedStyle(overlay).display,bodyOpen:document.body.classList.contains('blai-main-panel-open'),panelDisplay:getComputedStyle(document.getElementById('blai-purifier-popup')).display};});
