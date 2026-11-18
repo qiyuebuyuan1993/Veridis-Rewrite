@@ -283,12 +283,15 @@ export function focusLatestRuleCard() {
     const latestCard = cards[cards.length - 1];
     if (!latestCard) return;
 
-    const containerRect = container.getBoundingClientRect();
-    const cardRect = latestCard.getBoundingClientRect();
-    const isVisible = cardRect.top >= containerRect.top && cardRect.bottom <= containerRect.bottom;
+    const page = container.closest('.page-panel.active');
+    if (!page?.clientHeight) return;
 
-    if (!isVisible) {
-        latestCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const pageRect = page.getBoundingClientRect();
+    const cardRect = latestCard.getBoundingClientRect();
+    if (cardRect.top < pageRect.top || cardRect.height > page.clientHeight) {
+        page.scrollBy({ top: cardRect.top - pageRect.top, behavior: 'smooth' });
+    } else if (cardRect.bottom > pageRect.bottom) {
+        page.scrollBy({ top: cardRect.bottom - pageRect.bottom, behavior: 'smooth' });
     }
 
     latestCard.classList.remove('blai-highlight-flash');
