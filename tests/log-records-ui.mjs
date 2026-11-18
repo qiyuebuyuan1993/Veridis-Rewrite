@@ -186,6 +186,34 @@ try {
         assert.ok(await page.locator('#blai-purifier-popup').isVisible());
     }
     check('centered feedback window closes independently at desktop and phone widths');
+    await page.addStyleTag({content: `
+        html body :is(.popup:not(#loader), [role="dialog"]) {
+            background: rgba(230, 235, 240, .34) !important;
+            backdrop-filter: blur(20px) !important;
+        }
+    `});
+    await page.evaluate(() => {
+        document.documentElement.style.setProperty('--SmartThemeBlurTintColor', 'rgba(160, 180, 200, 0.2)');
+        document.getElementById('blai-purifier-popup').dataset.theme = 'auto';
+        logView.openFeedbackWorkspace('runtime-log');
+    });
+    for (const width of [390, 1920]) {
+        await page.setViewportSize({width, height:900});
+        const surfaces = await page.evaluate(() => {
+            const ctx = document.createElement('canvas').getContext('2d');
+            return ['#blai-purifier-popup', '.blai-feedback-dialog'].map(selector => {
+                const style = getComputedStyle(document.querySelector(selector));
+                ctx.clearRect(0, 0, 1, 1);
+                ctx.fillStyle = style.backgroundColor;
+                ctx.fillRect(0, 0, 1, 1);
+                return { rgba: [...ctx.getImageData(0, 0, 1, 1).data], blur: style.backdropFilter };
+            });
+        });
+        for (const surface of surfaces) {
+            assert.deepEqual(surface, { rgba: [160, 180, 200, 255], blur: 'none' });
+        }
+        check(`follow-host windows stay opaque under glass themes at ${width}px`);
+    }
     assert.deepEqual(errors,[]);
 } finally {
     fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({results,errors,realModelCalls:0,host:'isolated Chromium fixture; actual template/CSS/log modules and delegated copy handler'},null,2));
