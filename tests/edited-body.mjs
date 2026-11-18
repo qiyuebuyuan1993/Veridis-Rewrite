@@ -661,3 +661,16 @@ for (const enabled of [true, false]) test(`copy risk setting selects original or
     applyAcceptedRewrites(task, new Map([[task.items[0].id, model]]));
     assert.equal(h.msg.mes, (enabled ? target : model) + tail);
 });
+test('manual rewrite of reverted swipe preserves undo on 410 and applies successful response', async () => {
+    const h = harness('string');
+    setMessageDiffReverted(h.msg, true, h.key);
+    const before = structuredClone(h.chat);
+    globalThis.fetch = async () => ({ok:true,json:async()=>({choices:[{message:{content:'[API 错误] 410'}}]})});
+    assert.equal((await runAiRewriteForMessageNow(1,{manual:true})).status,'failed');
+    assert.deepEqual(h.chat,before);
+    globalThis.fetch = async () => ({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({'hit-1':rewritten})}}]})});
+    assert.equal((await runAiRewriteForMessageNow(1,{manual:true})).status,'applied');
+    assert.equal(h.meta().reverted,false);
+    assert.ok(h.msg.mes.includes('柜子'));
+    h.assertUntouched();
+});
