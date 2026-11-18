@@ -717,7 +717,7 @@ function buildAiRewriteCandidate(payload, options = {}) {
 
     const msg = chat[index];
     if (!isAssistantMessage(msg)) return { task: null, reason: '目标消息不是助手消息' };
-    if (isMessageDiffReverted(msg)) return { task: null, reason: '目标消息已撤回净化' };
+    if (isMessageDiffReverted(msg) && (options.manual !== true || payload?.automatic === true)) return { task: null, reason: '目标消息已撤回净化' };
     const isAutomatic = payload?.automatic === true;
     if (isAutomatic) {
         if (aiSettings.autoTriggerEnabled !== true) return { task: null, reason: '自动 AI 改写未启用' };
@@ -740,7 +740,7 @@ function buildAiRewriteCandidate(payload, options = {}) {
     const branchKey = getMessageDiffBranchKey(msg);
     const previous = getMessageDiffMeta(msg, branchKey);
     const rebaseFromCurrentText = !isAutomatic && previous !== null
-        && resolveManualProgramTail(currentText, previous) === null;
+        && (previous.reverted || resolveManualProgramTail(currentText, previous) === null);
     const frozenSnapshot = isAutomatic && payload && typeof payload === 'object' && typeof payload.snapshotText === 'string'
         ? payload.snapshotText
         : '';

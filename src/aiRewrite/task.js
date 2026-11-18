@@ -132,7 +132,7 @@ export function getTaskFreshnessIssue(task) {
     }
     if (msg !== task.messageRef) return 'message-ref-changed';
     if (!isAssistantMessage(msg)) return 'not-assistant-message';
-    if (isMessageDiffReverted(msg)) return 'message-reverted';
+    if (isMessageDiffReverted(msg) && (task.automatic || !task.claimedMeta?.reverted)) return 'message-reverted';
     if (getMessageDiffBranchKey(msg) !== task.branchKey) return 'branch-changed';
     if (typeof msg.mes !== 'string') return 'message-text-missing';
     if (task.automatic !== true
