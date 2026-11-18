@@ -34,6 +34,21 @@ export function getMessageDiffMeta(msg, branchKey = getMessageDiffBranchKey(msg)
     } : null;
 }
 
+export function getRecordedDiffPair(meta, section) {
+    if (!meta) return null;
+    if (section === 'program') {
+        return { oldText: meta.aiMes ?? meta.originalMes, newText: meta.programMes };
+    }
+    if (section === 'combined' || (section === 'ai' && meta.aiMes !== null)) {
+        return {
+            oldText: meta.originalMes,
+            newText: section === 'ai' ? meta.aiMes : meta.programMes,
+            ...(meta.aiUnchanged?.length ? { aiUnchanged: meta.aiUnchanged } : {}),
+        };
+    }
+    return null;
+}
+
 function writeBranchMeta(msg, branchKey, next) {
     if (!isObject(msg) || !branchKey) return false;
     if (!isCanonical(next)) throw new TypeError('Difference requires canonical stage texts and revert state');
