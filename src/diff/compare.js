@@ -125,7 +125,7 @@ function renderDiffOperation(operation, section) {
             `class="blai-diff-change"`,
             `data-blai-diff-type="${operation.type === 'delete' ? 'delete' : 'insert'}"`,
         ];
-        if (['ai', 'program'].includes(section)) attrs.push(`data-blai-diff-section="${section}"`);
+        if (['ai', 'program', 'combined'].includes(section)) attrs.push(`data-blai-diff-section="${section}"`);
         ['oldStart', 'oldEnd', 'newStart', 'newEnd'].forEach((key) => {
             if (Number.isFinite(Number(operation[key]))) attrs.push(`data-blai-${key.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`)}="${Number(operation[key])}"`);
         });
@@ -251,7 +251,7 @@ function getSnippetPairOperations(pair, operations) {
 
 // Split equal runs at original-stage coordinates, never search by repeated text.
 function annotateUnchangedTargets(pair, operations) {
-    if (pair.section !== 'ai' || !Array.isArray(pair.aiUnchanged)) return operations;
+    if (!Array.isArray(pair.aiUnchanged)) return operations;
     const ranges = pair.aiUnchanged.filter(item => Number.isInteger(item?.start)
         && Number.isInteger(item?.end) && item.start >= 0 && item.end > item.start
         && item.end <= pair.oldText.length && ['boundary-risk', 'unchanged'].includes(item.reason));
@@ -268,14 +268,16 @@ function annotateUnchangedTargets(pair, operations) {
     });
 }
 
-/** The existing Full/Snippet renderer, now consuming independent recorded pairs. */
+/** Full view follows the final text once. Snippets keep the recorded stages separate. */
 export function renderDiffDocument(pairs, mode) {
+    if (mode === 'full' && pairs.length === 2) {
+        const [ai, program] = pairs;
+        if (ai.newText === program.newText) pairs = [ai];
+        else if (ai.oldText === ai.newText && !ai.aiUnchanged?.length) pairs = [program];
+        else pairs = [{ section: 'combined', oldText: ai.oldText, newText: program.newText, aiUnchanged: ai.aiUnchanged }];
+    }
     const blocks = [];
     for (const pair of pairs) {
-        // An unchanged later stage adds no comparison information to a full view.
-        if (mode === 'full' && pair.oldText === pair.newText
-            && !pair.aiUnchanged?.length
-            && pairs.some(other => other.oldText !== other.newText || other.aiUnchanged?.length)) continue;
         const operations = annotateUnchangedTargets(pair, getDifferencePairOperations(pair));
         const runs = (mode === 'full'
             ? operations

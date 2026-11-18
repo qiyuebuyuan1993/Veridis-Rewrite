@@ -9,6 +9,7 @@
     box-sizing: border-box !important;
     padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) !important;
     overflow: hidden !important;
+    overflow: clip !important;
     background: rgba(0, 0, 0, 0.55) !important;
 }
 
@@ -42,6 +43,7 @@ body.blai-main-panel-open {
     color: var(--text-main) !important;
     box-shadow: 0 24px 64px color-mix(in srgb, #000 34%, transparent) !important;
     overflow: hidden !important;
+    overflow: clip !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
 }
@@ -115,7 +117,12 @@ body.blai-main-panel-open {
 }
 }
 
-/* Keep native per-page scrolling, with the rail at the window's right edge. */
+/* Only the active page should scroll when a rule card is revealed or focused. */
+#blai-purifier-popup.blai-app-shell :is(.app-main, .pages) {
+    overflow: clip !important;
+}
+
+/* Keep native scrollbars on the page and the rule collection's inner list. */
 #blai-purifier-popup.blai-app-shell .pages {
     padding: 0 !important;
 }
@@ -125,6 +132,9 @@ body.blai-main-panel-open {
     padding: 18px 0 !important;
     box-sizing: border-box !important;
     overflow-y: scroll !important;
+}
+#blai-purifier-popup.blai-app-shell .page-panel,
+#blai-rule-edit-modal #blai-edit-subrules-container {
     scrollbar-width: auto !important;
     scrollbar-color: auto !important;
     scrollbar-gutter: stable;
@@ -135,22 +145,26 @@ body.blai-main-panel-open {
     margin-inline: auto !important;
     box-sizing: border-box;
 }
-#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar {
+#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar,
+#blai-rule-edit-modal #blai-edit-subrules-container::-webkit-scrollbar {
     display: block !important;
     width: 14px !important;
 }
-#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar-track {
+#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar-track,
+#blai-rule-edit-modal #blai-edit-subrules-container::-webkit-scrollbar-track {
     background: var(--bg-surface) !important;
     border-left: 1px solid var(--border-color);
 }
-#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar-thumb {
+#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar-thumb,
+#blai-rule-edit-modal #blai-edit-subrules-container::-webkit-scrollbar-thumb {
     background: var(--accent-color) !important;
     border: 3px solid var(--bg-surface);
     border-radius: 999px;
     min-height: 36px;
     background-clip: padding-box !important;
 }
-#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar-thumb:hover {
+#blai-purifier-popup.blai-app-shell .page-panel::-webkit-scrollbar-thumb:hover,
+#blai-rule-edit-modal #blai-edit-subrules-container::-webkit-scrollbar-thumb:hover {
     border-width: 2px;
 }
 @media (max-width: 600px) {

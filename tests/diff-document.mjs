@@ -9,8 +9,26 @@ test('full preview omits an unchanged second stage without mutating recorded tex
     assert.equal(renderDiffDocument(pairs,'full').length,1);
     assert.deepEqual(pairs,before);
 });
-test('full preview retains both changed stages and a standalone unchanged record', () => {
-    assert.equal(renderDiffDocument([{section:'ai',oldText:'甲。',newText:'乙。'},
-        {section:'program',oldText:'乙。',newText:'丙。'}],'full').length,2);
+test('two changed stages produce one full body and keep their separate snippets', () => {
+    const original = '甲。保留段落。复述。复述。尾声丁。';
+    const intermediate = '乙。保留段落。复述。复述。尾声丁。';
+    const final = '乙。保留段落。复述。复述。尾声丙。';
+    const pairs = [
+        {section:'ai',oldText:original,newText:intermediate,aiUnchanged:[{start:2,end:7,reason:'unchanged'}]},
+        {section:'program',oldText:intermediate,newText:final},
+    ];
+    const before = structuredClone(pairs);
+    const full = renderDiffDocument(pairs,'full');
+    assert.equal(full.length,1);
+    assert.match(full[0],/<mark[^>]*>保留段落。<\/mark>/u);
+    assert.match(full[0],/data-blai-diff-section="combined"/u);
+    assert.equal(full[0].replace(/<del\b[^>]*>.*?<\/del>/gsu,'').replace(/<[^>]+>/gu,''),final);
+    const snippets = renderDiffDocument(pairs,'snippet').join('');
+    assert.match(snippets,/data-blai-diff-section="ai"/u);
+    assert.match(snippets,/data-blai-diff-section="program"/u);
+    assert.deepEqual(pairs,before);
+});
+
+test('full preview retains a standalone unchanged record', () => {
     assert.equal(renderDiffDocument([{section:'program',oldText:'甲。',newText:'甲。'}],'full').length,1);
 });

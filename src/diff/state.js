@@ -1,6 +1,6 @@
 /** Transient viewer interaction only. Comparisons are derived from the selected branch. */
 import { getAppContext } from '../host/appContext.js';
-import { getMessageDiffMeta } from './messageMeta.js';
+import { getMessageDiffMeta, getRecordedDiffPair } from './messageMeta.js';
 
 export const diffRuntimeState = {
     currentMessage: null,
@@ -32,12 +32,5 @@ export function resetDiffRuntimeState() {
 
 export function getDiffComparisonForMessage(index, section) {
     const msg = getAppContext().chat?.[index];
-    const meta = getMessageDiffMeta(msg);
-    if (!meta) return null;
-    if (section === 'ai') {
-        return meta.aiMes === null ? null : { oldText: meta.originalMes, newText: meta.aiMes, ...(meta.aiUnchanged?.length ? { aiUnchanged: meta.aiUnchanged } : {}) };
-    }
-    return section === 'program'
-        ? { oldText: meta.aiMes ?? meta.originalMes, newText: meta.programMes }
-        : null;
+    return getRecordedDiffPair(getMessageDiffMeta(msg), section);
 }

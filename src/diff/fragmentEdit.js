@@ -1,13 +1,13 @@
-import { getMessageDiffMeta, isMessageDiffReverted, writeMessageDiffAiStage } from './messageMeta.js';
+import { getMessageDiffMeta, getRecordedDiffPair, isMessageDiffReverted, writeMessageDiffAiStage } from './messageMeta.js';
 import { getMessageDiffBranchKey, commitCurrentMessageText, clearMessageDisplayText, syncCurrentSwipeExtra } from '../chat/messageBranch.js';
 
 export function captureFragmentEdit(chat, msg, section, change) {
     const meta = getMessageDiffMeta(msg);
     if (!Array.isArray(chat) || !chat.includes(msg) || !meta || isMessageDiffReverted(msg) || msg.mes !== meta.programMes) return null;
-    const oldText = section === 'ai' ? meta.originalMes : meta.aiMes ?? meta.originalMes;
-    const newText = section === 'ai' ? meta.aiMes : meta.programMes;
+    const pair = getRecordedDiffPair(meta, section);
     // Intermediate-stage offsets are not final-body offsets. Do not guess a mapping.
-    if (!['ai', 'program'].includes(section) || newText !== msg.mes) return null;
+    if (pair?.newText !== msg.mes) return null;
+    const { oldText, newText } = pair;
     const { oldStart, oldEnd, newStart, newEnd, deletedText, insertedText } = change;
     if (![oldStart, oldEnd, newStart, newEnd].every(Number.isInteger)
         || oldStart < 0 || oldEnd < oldStart || oldEnd > oldText.length

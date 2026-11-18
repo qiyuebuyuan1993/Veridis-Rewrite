@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Veridis",
-    "version": "3.5.0-fix.47",
+    "version": "3.5.0-fix.48",
     "description": "在关键词净化基础上增加可选 OpenAI 兼容局部改写。",
-    "update_note": "修复47：跟随酒馆主题时使用不透明的插件窗口底色，避免毛玻璃主题下聊天文字透进界面。"
+    "update_note": "修复48：合集编辑器显示右侧滚动条，新增合集后只滚动规则页，前文透视全文只显示一份正文。"
 }
