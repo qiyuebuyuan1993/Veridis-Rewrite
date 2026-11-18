@@ -4,6 +4,11 @@
 
 原作者：[The-Veridis-Lion](https://github.com/The-Veridis-Lion)。原项目：[GitHub](https://github.com/The-Veridis-Lion/Veridis-Rewrite) / [Discord](https://discord.com/channels/1134557553011998840/1488671923776000020)。本修改版继续遵守 README 中完整保留的[许可与版权](README.md#许可与版权)，仅供非商业使用。
 
+## 2026-11-18：修复47
+
+- 跟随酒馆主题时，插件窗口沿用宿主背景色并使用不透明底色。毛玻璃主题下，聊天文字不再透进主窗口、透视和诊断弹窗。
+- 防止宿主应用于通用弹窗的毛玻璃规则覆盖插件窗口的底色。保留外围遮罩和酒馆自身的主题效果。
+
 ## 2026-11-15：修复43
 
 - 修复宿主先发出 GENERATION_STARTED、再追加本轮用户消息并发出 MESSAGE_SENT 时，自动改写被误当成下一轮而取消的问题。
