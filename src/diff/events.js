@@ -316,12 +316,6 @@ export function bindDiffEvents() {
         if (!Number.isInteger(index) || index < 0 || !msg || typeof msg !== 'object') {
             return;
         }
-        if (isMessageDiffReverted(msg)) {
-            recleanseDiffMessageAtIndex(index);
-            if (isMessageDiffReverted(msg)) return;
-            refreshMessageAfterRevertToggle(index, msg);
-        }
-
         closeDiffActionsMenu();
         requestManualAiRewriteForMessage(index);
     };
