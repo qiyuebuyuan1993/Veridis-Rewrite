@@ -38,6 +38,7 @@ export function resolveManualProgramTail(currentText, previous) {
 
 export function snapshotAiRewriteTaskSettings(settings, aiSettings) {
     const frozenSettings = {
+        keepOriginalOnCopyRisk: settings?.keepOriginalOnCopyRisk !== false,
         scopeTagMode: settings?.scopeTagMode,
         scopeTags: Array.isArray(settings?.scopeTags)
             ? settings.scopeTags.map((scopeTag) => ({ ...scopeTag }))

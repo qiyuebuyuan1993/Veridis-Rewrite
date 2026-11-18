@@ -175,7 +175,8 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (dialogueGuard.removedCount) recordAiRewriteDebug('boundary-dialogue-trimmed', {
         generationId: task.generationId || '', index: task.index, removedCount: dialogueGuard.removedCount,
     });
-    const rejectedCopies = dialogueGuard.replacements.filter(item => item.strategy === 'boundary-dialogue-rejected');
+    const useModelOutput = task.settings?.keepOriginalOnCopyRisk === false;
+    const rejectedCopies = useModelOutput ? [] : dialogueGuard.replacements.filter(item => item.strategy === 'boundary-dialogue-rejected');
     if (rejectedCopies.length) recordAiRewriteDebug('boundary-dialogue-rejected', {
         generationId: task.generationId || '', index: task.index, count: rejectedCopies.length,
         reason: 'Interior source-quote copy; original target retained to preserve facts.',
@@ -185,6 +186,10 @@ function applyRewritePlan(task, selectedReplacements, mode) {
     if (guarded.removedCount && mode === 'ai') recordAiRewriteDebug('added-narration-copy-trimmed', {
         generationId: task.generationId || '', index: task.index, removedCount: guarded.removedCount,
     });
+    if (mode === 'ai' && useModelOutput) {
+        guarded.replacements = guarded.replacements.map((item, index) =>
+            dialogueGuard.replacements[index].strategy === 'boundary-dialogue-rejected' ? replacements[index] : item);
+    }
     const aiUnchanged = mode === 'ai' ? guarded.replacements
         .filter(item => item.strategy === 'boundary-dialogue-rejected'
             || item.rewritten === originalText.slice(item.start, item.end))

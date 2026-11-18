@@ -196,6 +196,11 @@ export function bindEvents() {
     });
     const settings = extension_settings[extensionName];
     normalizeZhVariantSettings(settings);
+    $('#blai-keep-original-copy-risk').prop('checked', settings.keepOriginalOnCopyRisk !== false)
+        .off('change.blaiCopyRisk').on('change.blaiCopyRisk', function () {
+            settings.keepOriginalOnCopyRisk = this.checked;
+            saveSettingsDebounced();
+        });
     const syncSkipUserToggle = () => {
         const enabled = settings.skipUserMessages === true;
         $('#blai-skip-user-toggle')

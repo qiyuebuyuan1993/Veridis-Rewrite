@@ -342,6 +342,7 @@ export const defaultSettings = {
     uiFontScale: 1,
     diffFontScale: 1,
     logLevel: 2,  // 0=off, 1=error, 2=warn(default), 3=info, 4=debug
+    keepOriginalOnCopyRisk: true,
     skipUserMessages: false,
     showComposerAiRewriteButton: false,
     shujukuAutoProgramRewriteEnabled: false,
