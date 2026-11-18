@@ -74,7 +74,7 @@
     white-space: nowrap !important;
 }
 
-#blai-purifier-popup .page-panel::-webkit-scrollbar, #blai-edit-subrules-container::-webkit-scrollbar {
+#blai-purifier-popup .page-panel::-webkit-scrollbar {
     display: none;
 }
 

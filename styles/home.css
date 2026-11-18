@@ -987,7 +987,6 @@
     -webkit-overflow-scrolling: touch !important;
     margin: 10px 0 !important;
     padding-right: 2px !important;
-    scrollbar-width: none !important;
 }
 
 #blai-edit-subrules-container .blai-subrule-card {
