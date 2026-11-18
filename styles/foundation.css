@@ -1,18 +1,31 @@
 /* Shared Veridis theme tokens, common controls, and modal primitives. */
 
+:root {
+    --blai-host-panel-bg: Canvas;
+    --blai-host-panel-text: CanvasText;
+}
+
+/* Follow the host tint without inheriting the transparency of its glass surfaces. */
+@supports (color: rgb(from black r g b / 1)) {
+    :root {
+        --blai-host-panel-bg: rgb(from var(--SmartThemeBlurTintColor, Canvas) r g b / 1);
+        --blai-host-panel-text: var(--SmartThemeBodyColor, CanvasText);
+    }
+}
+
 #blai-purifier-popup, .blai-modal-shell, #blai-scope-tag-editor-modal, #blai-rule-transfer-modal, #blai-diff-modal, #blai-rule-search-modal, #blai-preset-import-choice-modal, .blai-toast, #blai-loading-overlay, #blai-tour-layer {
     --status-danger: #B6494B;
     --status-success: #5D8A68;
 }
 
 #blai-purifier-popup[data-theme="auto"], .blai-modal-shell[data-theme="auto"], #blai-scope-tag-editor-modal[data-theme="auto"], #blai-rule-transfer-modal[data-theme="auto"], #blai-diff-modal[data-theme="auto"], #blai-rule-search-modal[data-theme="auto"], #blai-preset-import-choice-modal[data-theme="auto"], .blai-toast[data-theme="auto"], #blai-loading-overlay[data-theme="auto"], #blai-tour-layer[data-theme="auto"] {
-    --bg-base: var(--SmartThemeBlurTintColor);
-    --bg-surface: var(--SmartThemeBlurTintColor);
+    --bg-base: var(--blai-host-panel-bg);
+    --bg-surface: var(--bg-base);
     --accent-color: var(--SmartThemeQuoteColor);
-    --text-main: var(--SmartThemeBodyColor);
+    --text-main: var(--blai-host-panel-text);
     --text-secondary: color-mix(
         in srgb,
-        var(--SmartThemeBodyColor) 68%,
+        var(--text-main) 68%,
         transparent
     );
     --border-color: var(--SmartThemeBorderColor);
@@ -604,6 +617,15 @@
     background: var(--bg-surface) !important;
     color: var(--text-main) !important;
     box-shadow: 0 18px 48px color-mix(in srgb, var(--bg-base) 18%, transparent) !important;
+}
+
+/* Keep these cards opaque when a host theme styles every [role="dialog"]. */
+:is(#blai-ai-generation-modal, #blai-risk-confirm-modal, #blai-risk-info-modal, #blai-scope-tag-editor-modal) > .blai-modal-card[role="dialog"],
+#blai-feedback-workspace > .blai-feedback-dialog[role="dialog"] {
+    background: var(--bg-surface) !important;
+    color: var(--text-main) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .blai-modal-actions {

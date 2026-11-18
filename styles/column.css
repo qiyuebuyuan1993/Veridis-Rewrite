@@ -39,6 +39,7 @@ body.blai-main-panel-open {
     border: 1px solid var(--border-color) !important;
     border-radius: 20px !important;
     background: var(--bg-base) !important;
+    color: var(--text-main) !important;
     box-shadow: 0 24px 64px color-mix(in srgb, #000 34%, transparent) !important;
     overflow: hidden !important;
     backdrop-filter: none !important;
