@@ -331,6 +331,14 @@
                                                     <span class="blai-switch-state blai-persona-protect-text">关闭</span>
                                                 </button>
                                             </div>
+                                            <label class="blai-clean-setting-row" for="blai-keep-original-copy-risk">
+                                                <div><strong>回抄风险时保留原句</strong>
+                                                    <p>检测到 AI 疑似抄入目标外内容且无法安全修剪时保留原句。关闭后采用 AI 返回的内容，可能出现重复或缺句。</p></div>
+                                                <span class="blai-clean-checkbox-switch">
+                                                    <input type="checkbox" id="blai-keep-original-copy-risk" checked>
+                                                    <span class="blai-clean-switch-track" aria-hidden="true"><span></span></span>
+                                                </span>
+                                            </label>
                                             <label class="blai-clean-setting-row" for="blai-ai-protect-comments">
                                                 <div>
                                                     <strong>保护 HTML/XML 注释</strong>
@@ -631,6 +639,7 @@
             </section>
 
             <section id="blai-feedback-workspace" class="blai-feedback-workspace" aria-hidden="true" aria-labelledby="blai-feedback-workspace-title">
+                <div class="blai-feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="blai-feedback-workspace-title">
                 <header class="blai-feedback-workspace-header">
                     <div>
                         <span>VERIDIS</span>
@@ -645,6 +654,7 @@
                     <button type="button" data-feedback-view="submit" aria-pressed="false">提交反馈</button>
                 </nav>
                 <div id="blai-feedback-workspace-content" class="blai-feedback-workspace-content"></div>
+                </div>
             </section>
 
         </div>
