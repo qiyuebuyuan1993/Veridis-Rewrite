@@ -481,7 +481,7 @@ for (const mode of ['cancel', 'stale', 'invalid-json']) test(`single request res
     };
     await runAiRewriteForMessageNow(1,{manual:true});
     assert.equal(requests,1);
-    assert.equal(h.msg.mes,mode==='stale'?'用户新写的正文。':(mode==='invalid-json'?target.replace('极其',''):target)+tail);
+    assert.equal(h.msg.mes,mode==='stale'?'用户新写的正文。':target+tail);
     h.assertUntouched();
 });
 
@@ -627,3 +627,26 @@ test('unchanged AI targets persist even with no body changes and clear on a late
     assert.equal(h.meta().aiUnchanged, undefined);
     assert.equal(h.msg.mes, '他认真。');
 });
+for (const manual of [true, false]) {
+    for (const reason of ['410 model has reached its end of life', '429 Too Many Requests', '503 Service Unavailable', 'aborted']) {
+        test(`API failure preserves chat: manual=${manual}, ${reason}`, async () => {
+            const h = harness('string');
+            delete h.msg.__blai_diff_branch_meta;
+            h.settings.aiRewrite.autoTriggerEnabled = true;
+            generationLifecycle.configure({getCurrentChatId: () => 'host:fixture', getCurrentChat: () => h.chat});
+            const session = generationLifecycle.startGeneration({chatId:'host:fixture', chat:h.chat, mode:'normal'});
+            generationLifecycle.bindMessage(1, {chatId:'host:fixture', chat:h.chat});
+            const before = structuredClone(h.chat);
+            globalThis.fetch = async () => {
+                if (reason === 'aborted') throw new Error(reason);
+                return {ok:true, status:200, json:async () => ({choices:[{message:{content:'[API 错误]\n'+reason}}]})};
+            };
+            const payload = {automatic:true, generationId:session.generationId, chatId:'host:fixture', messageId:1};
+            const result = await runAiRewriteForMessageNow(manual ? 1 : payload, {manual});
+            assert.equal(result.status, 'failed');
+            assert.ok(result.reason.includes(reason));
+            assert.deepEqual(h.chat, before);
+            generationLifecycle.cancelActive('fixture-end');
+        });
+    }
+}
