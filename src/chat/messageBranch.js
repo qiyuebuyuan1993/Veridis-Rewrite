@@ -33,11 +33,14 @@ export function getMessageDiffBranchKey(msg) {
     const session = generationLifecycle.getActive();
     if (session?.finalSource === 'message-received'
         && session.messageRef === msg
-        && msg?.swipe_id === undefined
-        && msg?.swipeId === undefined
-        && msg?.swipes === undefined
         && generationLifecycle.validate(session.generationId).ok) {
-        return 'swipe:0';
+        if (msg.swipe_id === undefined && msg.swipeId === undefined && msg.swipes === undefined) return 'swipe:0';
+        // TT reserves the new last slot before notifying listeners and fills it after receipt.
+        const index = msg.swipe_id;
+        if (session.mode === 'swipe' && Array.isArray(msg.swipes) && Number.isInteger(index)
+            && index > 0 && index === msg.swipes.length - 1 && !Object.hasOwn(msg.swipes, index)) {
+            return `swipe:${index}`;
+        }
     }
     return msg?.swipes === undefined ? 'main' : null;
 }
