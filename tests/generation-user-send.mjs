@@ -27,7 +27,7 @@ function fixture() {
         mode: 'text', rewriteMode: 'ai', targets: ['极其'], replacements: [''] }] }],
         aiRewrite: { ...defaultAiRewriteSettings, enabled: true, autoTriggerEnabled: true, xmlScopeTag: '',
             baseUrl: 'https://fixture.invalid/v1', apiKey: 'fixture', model: 'fixture', maxRetries: 0 } });
-    const types = Object.fromEntries(['GENERATION_STARTED', 'GENERATION_ENDED', 'GENERATION_STOPPED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED'].map(n => [n, n]));
+    const types = Object.fromEntries(['GENERATION_STARTED', 'GENERATION_ENDED', 'GENERATION_STOPPED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_SWIPED'].map(n => [n, n]));
     initAppContext({ chat, extension_settings: { [extensionName]: settings }, eventSource: events, event_types: types,
         getSillyTavernContext: () => host, saveChat: host.saveChat, saveSettingsDebounced() {} });
     generationLifecycle.configure({ getCurrentChatId: () => 'host:start-send', getCurrentChat: () => chat });
@@ -99,4 +99,40 @@ for (const mutation of ['replace-tail', 'edit-tail', 'extra-append', 'change-cha
     if (mutation === 'extra-append') f.chat.push({ is_user: false, mes: 'another' });
     if (mutation === 'change-chat') f.host.chatId = 'different';
     f.send(); assert.equal(generationLifecycle.getActive(), null);
+});
+
+for (const navigate of [false, true]) test(`non-streaming new Swipe receipt before slot allocation completes, navigate=${navigate}`, async () => {
+    const f = fixture();
+    f.send();
+    const message = { is_user: false, mes: 'second', swipes: ['first', 'second'], swipe_id: 2, extra: {} };
+    f.chat.push(message);
+    const original = '他极其认真地检查桌面。';
+    let requests = 0;
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    globalThis.fetch = async () => { requests++; await pending; return reply(); };
+    f.emit('GENERATION_STARTED', 'swipe', {}, false);
+    f.emit('GENERATION_ENDED', f.chat.length);
+    message.swipes.length++;
+    message.mes = original;
+    f.emit('MESSAGE_RECEIVED', 2, 'swipe');
+    message.swipes[2] = original;
+    await until(() => requests === 1);
+    if (navigate) {
+        message.swipe_id = 1;
+        message.mes = message.swipes[1];
+        f.emit('MESSAGE_SWIPED', 2);
+    }
+    release();
+    if (navigate) {
+        await pause(100);
+        assert.equal(message.mes, 'second');
+        assert.equal(message.swipes[2], original);
+    } else {
+        await until(() => message.mes === '他认真地检查桌面。');
+        assert.equal(message.swipes[2], message.mes);
+    }
+    assert.deepEqual(message.swipes.slice(0, 2), ['first', 'second']);
+    assert.equal(requests, 1);
+    resetAiRewriteRuntimeState();
 });

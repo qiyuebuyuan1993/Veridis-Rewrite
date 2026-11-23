@@ -4,6 +4,10 @@
 
 原作者：[The-Veridis-Lion](https://github.com/The-Veridis-Lion)。原项目：[GitHub](https://github.com/The-Veridis-Lion/Veridis-Rewrite) / [Discord](https://discord.com/channels/1134557553011998840/1488671923776000020)。本修改版继续遵守 README 中完整保留的[许可与版权](README.md#许可与版权)，仅供非商业使用。
 
+## 2026-11-23：修复49
+
+- 修复 TT 非流式生成新 Swipe 后偶尔跳过自动改写的问题。
+
 ## 2026-11-18：修复48
 
 - 规则合集编辑器的映射列表显示右侧滚动条，新增规则和保存按钮固定在底部。
