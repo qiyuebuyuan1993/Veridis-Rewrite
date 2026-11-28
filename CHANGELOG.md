@@ -4,6 +4,10 @@
 
 原作者：[The-Veridis-Lion](https://github.com/The-Veridis-Lion)。原项目：[GitHub](https://github.com/The-Veridis-Lion/Veridis-Rewrite) / [Discord](https://discord.com/channels/1134557553011998840/1488671923776000020)。本修改版继续遵守 README 中完整保留的[许可与版权](README.md#许可与版权)，仅供非商业使用。
 
+## 2026-11-28：修复50
+
+- 支持 API 管理器填入模型名。AI 连接区使用单个导入按钮，将当前连接保存到同 URL 的配置组，并标记词汇映射分组与新密钥备注。
+
 ## 2026-11-23：修复49
 
 - 修复 TT 非流式生成新 Swipe 后偶尔跳过自动改写的问题。

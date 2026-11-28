@@ -1,4 +1,4 @@
-// ST-Api-Scripts 2.2.8 catalog contract (82ea902). Native imports keep its
+// ST-Api-Scripts 2.2.22 catalog contract. Native imports keep its
 // in-memory catalog current; never edit its persistent state behind its back.
 const namespace = 'st-api-manager';
 const catalogKey = 'st_api_manager_catalog_v2';
@@ -63,129 +63,55 @@ function connectionFields(baseUrl, apiKey, model) {
     return { baseUrl: baseUrl.trim(), apiKey, model: model.trim() };
 }
 
-export function managerRowToConnection(row) {
+function compatibleEndpoint(row) {
     // Veridis sends OpenAI-compatible chat completions, not native Gemini.
     const defaults = { openai: 'https://api.openai.com/v1', deepseek: 'https://api.deepseek.com/v1' };
     if (!['custom', 'openai', 'deepseek'].includes(row?.source)) {
         throw new Error('此来源不是受支持的 OpenAI 兼容连接，请在管理器中使用自定义兼容接口。');
     }
-    return connectionFields(row.url.trim() || defaults[row.source] || '', row.key, row.model);
+    return row.url.trim() || defaults[row.source] || '';
 }
 
-export function buildManagerImport(catalog, connection, name, groupName = '词汇映射', makeId = () => crypto.randomUUID()) {
+export function managerRowToConnection(row) {
+    return connectionFields(compatibleEndpoint(row), row.key, row.model);
+}
+
+export function buildManagerImport(catalog, connection, makeId = () => crypto.randomUUID()) {
     validateManagerCatalog(catalog);
-    const fields = connectionFields(String(connection.baseUrl || '').trim(), String(connection.apiKey || ''), String(connection.model || '').trim());
-    const target = String(groupName || '').trim() || '词汇映射';
-    const matches = catalog.groups.filter(group => group.name === target);
-    if (matches.length > 1) throw new Error('管理器中有同名分组，请先区分分组名称后重试。');
-    const group = matches[0] || { id: makeId(), name: target };
-    const duplicate = catalog.entries.some(row => {
-        if (!row.groupIds.includes(group.id)) return false;
+    const fields = connectionFields(connection.baseUrl || '', connection.apiKey || '', connection.model || '');
+    const label = '词汇映射';
+    const groups = catalog.groups.filter(group => group.name === label);
+    if (groups.length > 1) throw new Error('管理器中有多个同名词汇映射分组，请先区分名称。');
+    const group = groups[0] || { id: makeId(), name: label };
+    const normalized = url => new URL(url).href.replace(/\/+$/, '');
+    const rows = catalog.entries.filter(row => {
         try {
-            const existing = managerRowToConnection(row);
-            return existing.baseUrl === fields.baseUrl && existing.apiKey === fields.apiKey && existing.model === fields.model;
+            return normalized(compatibleEndpoint(row)) === normalized(fields.baseUrl);
         } catch { return false; }
     });
-    if (duplicate) return null;
-    return { format, version: 2, groups: [{ ...group }], entries: [{
-        id: makeId(), site: target, name: String(name || '').trim() || fields.model,
-        source: 'custom', url: fields.baseUrl, key: fields.apiKey, model: fields.model, groupIds: [group.id],
+    if (new Set(rows.map(row => JSON.stringify([row.site, row.source, row.url]))).size > 1) {
+        throw new Error('管理器中有多个配置组使用这个 URL，请先确认目标配置组。');
+    }
+    const existing = rows.find(row => row.key === fields.apiKey && row.model === fields.model && row.groupIds.includes(group.id));
+    if (existing) return null;
+    const site = rows[0];
+    const credential = rows.find(row => row.key === fields.apiKey && row.credentialId);
+    const note = catalog.keyNotes?.find(note => note.id === credential?.credentialId) || { id: makeId(), note: label };
+    return { format, version: 2, groups: [group], keyNotes: [note], entries: [{
+        id: makeId(), site: site?.site ?? label, source: site?.source ?? 'custom', url: site?.url ?? fields.baseUrl,
+        key: fields.apiKey, model: fields.model, name: '', groupIds: [group.id], credentialId: note.id,
     }] };
 }
 
-const batchGroupName = '词汇映射';
-const signature = fields => JSON.stringify([fields.baseUrl, fields.apiKey, fields.model]);
-const rowSignature = row => {
-    try { return signature(managerRowToConnection(row)); } catch { return null; }
-};
-
-export function getManagerBatchGroup(catalog) {
-    validateManagerCatalog(catalog);
-    const matches = catalog.groups.filter(group => group.name === batchGroupName);
-    if (matches.length > 1) throw new Error('管理器中存在多个“词汇映射”标签分组，请先区分名称。');
-    const group = matches[0];
-    // Existing named labels are authoritative. Older site-only configurations
-    // are considered only when the dedicated label has not been created yet.
-    return { group, rows: catalog.entries.filter(row => group
-        ? row.groupIds.includes(group.id) : row.site === batchGroupName) };
-}
-
-export function buildManagerBatch(catalog, presets, mode, makeId = () => crypto.randomUUID()) {
-    if (!['add', 'to-manager', 'to-veridis'].includes(mode)) throw new Error('请选择批量同步方式。');
-    const { group, rows } = getManagerBatchGroup(catalog);
-    const names = Object.keys(presets || {});
-    if (mode === 'to-veridis') {
-        if (!group && !rows.length) throw new Error('管理器中尚无“词汇映射”分组，未覆盖 API 预设。');
-        const entries = [], used = new Set();
-        for (const row of rows) {
-            // Abort the entire operation on unsupported/incomplete entries.
-            const fields = managerRowToConnection(row);
-            const originalName = row.name.trim() || row.model.trim() || 'API';
-            let name = originalName, suffix = 2;
-            while (used.has(name)) name = `${originalName} (${suffix++})`;
-            used.add(name);
-            entries.push([name, { ...(Object.hasOwn(presets, name) ? presets[name] : {}), ...fields, modelOptions: [] }]);
-        }
-        return { presets: Object.fromEntries(entries), count: entries.length,
-            summary: `管理器“词汇映射”分组 ${rows.length} 条 → 覆盖词汇映射已保存的 ${names.length} 个 API 预设。当前连接和全局改写参数保留。` };
-    }
-    const source = names.map(name => {
-        const preset = presets[name];
-        const fields = connectionFields(String(preset?.baseUrl || '').trim(), String(preset?.apiKey || ''), String(preset?.model || '').trim());
-        return { name, fields, signature: signature(fields) };
-    });
-    const target = group || { id: makeId(), name: batchGroupName };
-    const create = item => ({ id: makeId(), site: batchGroupName, name: item.name, source: 'custom',
-        url: item.fields.baseUrl, key: item.fields.apiKey, model: item.fields.model, groupIds: [target.id] });
-    if (mode === 'add') {
-        const known = new Set(rows.map(rowSignature).filter(Boolean)), added = [];
-        for (const item of source) {
-            if (known.has(item.signature)) continue;
-            added.push(create(item));
-            known.add(item.signature);
-        }
-        return { catalog: added.length ? { format, version: 2, groups: [{ ...target }], entries: added } : null,
-            count: added.length, summary: `已保存 ${names.length} 个 API；管理器分组已有 ${rows.length} 条；新增 ${added.length} 条，跳过重复 ${names.length - added.length} 条。` };
-    }
-    const reused = new Set();
-    const desired = source.map(item => {
-        const match = rows.find(row => !reused.has(row.id) && row.name === item.name && rowSignature(row) === item.signature);
-        if (!match) return create(item);
-        reused.add(match.id);
-        return match.groupIds.includes(target.id) ? match : { ...match, groupIds: [...match.groupIds, target.id] };
-    });
-    const scoped = new Set(rows.map(row => row.id)), retained = [];
-    let removed = 0, detached = 0;
-    for (const row of catalog.entries) {
-        if (!scoped.has(row.id)) retained.push(row);
-        else if (!reused.has(row.id)) {
-            const otherGroups = row.groupIds.filter(id => id !== target.id);
-            if (otherGroups.length) { retained.push({ ...row, groupIds: otherGroups }); detached++; }
-            else removed++;
-        }
-    }
-    const entries = [...retained, ...desired];
-    const next = { ...catalog, groups: group ? catalog.groups : [...catalog.groups, target], entries };
-    // Retain credential notes still referenced by any group.
-    if (catalog.keyNotes) {
-        const referenced = new Set(entries.map(row => row.credentialId));
-        next.keyNotes = catalog.keyNotes.filter(note => referenced.has(note.id));
-    }
-    return { catalog: next, replace: true, count: desired.length,
-        summary: `用已保存的 ${names.length} 个 API 覆盖管理器“词汇映射”分组（原有 ${rows.length} 条）：保留相同条目 ${reused.size} 条，新增 ${desired.length - reused.size} 条，移除 ${removed} 条；${detached} 条仅移出本分组并保留在其他分组。` };
-}
-
-// The manager currently exposes no public write API. Its supported merge-import
-// path serializes writes, preserves unrelated data, refreshes the UI and marks
-// account sync pending. Never bypass this by editing its persistent state.
-export async function mergeThroughManager(host, catalog, { replace = false, beforeWrite = async () => {} } = {}) {
+export async function mergeThroughManager(host, catalog) {
     validateManagerCatalog(catalog);
     const doc = host.document;
     const main = doc.querySelector('dialog.st-api-manager[aria-label="API 管理器"]');
     if (!main) throw new Error('请先启用 API 管理器，再重试保存。');
     if (doc.querySelector('dialog.st-api-manager[open]')) throw new Error('请先关闭 API 管理器的窗口，再重试保存。');
+    let settingsPane;
     const dataButton = [...main.querySelectorAll('.api-manager-toolbar button')]
-        .find(button => button.textContent.trim() === '数据');
+        .find(button => ['设置', '数据'].includes(button.textContent.trim()));
     if (!dataButton || dataButton.disabled || !host.DataTransfer || !host.File) {
         throw new Error('此版本暂不支持直接写回，请更新 API 管理器或浏览器。');
     }
@@ -208,6 +134,8 @@ export async function mergeThroughManager(host, catalog, { replace = false, befo
         host.dispatchEvent(new host.Event('st-api-manager-open-request'));
         if (!main.open) throw new Error('无法打开 API 管理器，请确认管理器已正常启动。');
         dataButton.click();
+        settingsPane = doc.querySelector('dialog.st-api-manager[open][aria-label="设置"]');
+        settingsPane?.querySelector('button[aria-label="数据"]')?.click();
         dataPane = doc.querySelector('dialog.st-api-manager[open][aria-label="数据"]');
         const input = dataPane?.querySelector('input.data-actions-file-input[type="file"]');
         if (!input) throw new Error('未找到管理器的合并导入入口，请更新管理器。');
@@ -216,23 +144,14 @@ export async function mergeThroughManager(host, catalog, { replace = false, befo
         input.files = transfer.files;
         input.dispatchEvent(new host.Event('change', { bubbles: true }));
         mergePane = await waitFor(() => doc.querySelector('dialog.st-api-manager[open][aria-label="导入方式"]'), dataPane);
-        const label = replace ? '替换导入' : '合并导入';
+        const label = '合并导入';
         const merge = [...mergePane.querySelectorAll('button.import-mode-option')]
             .find(button => button.querySelector('span')?.textContent.trim() === label);
         if (!merge || merge.disabled) throw new Error('未找到安全的合并导入按钮，未执行写入。');
-        try { await beforeWrite(); }
-        catch (error) {
-            mergePane.close(); dataPane.close(); main.close();
-            throw error;
-        }
         merge.click();
-        // A cancelled native replacement confirmation does not start a write.
-        if (replace && !merge.disabled && mergePane.isConnected) {
-            mergePane.close(); dataPane.close(); main.close();
-            throw new Error('已取消覆盖，原有配置未改动。');
-        }
-        await waitFor(() => !mergePane.isConnected && dataPane.querySelector('[role="status"]')?.textContent === (replace ? '已替换导入配置。' : '已合并导入配置。'), mergePane);
+        await waitFor(() => !mergePane.isConnected && dataPane.querySelector('[role="status"]')?.textContent === '已合并导入配置。', mergePane);
         dataPane.close();
+        settingsPane?.close();
         main.close();
     } catch (error) {
         // Keep manager errors visible; never retry or change the chosen mode.
