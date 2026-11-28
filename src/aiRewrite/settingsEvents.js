@@ -15,7 +15,6 @@ let aiApiCheckSequence = 0;
 export function bindAiSettingsEvents() {
     const { extension_settings, saveSettingsDebounced } = getAppContext();
     const settings = extension_settings[extensionName];
-    let syncApiManagerControls = () => {};
     const ensureAiRewriteSettings = () => {
         const currentAiSettings = settings.aiRewrite && typeof settings.aiRewrite === 'object'
             ? settings.aiRewrite
@@ -96,9 +95,7 @@ export function bindAiSettingsEvents() {
         return [...new Set(options.map((value) => String(value || '').trim()).filter(Boolean))];
     };
     const syncAiModelControl = (aiSettings) => {
-        const $select = $('#blai-ai-model');
         const $manual = $('#blai-ai-model-manual');
-        if (!$select.length || !$manual.length) return;
         const fetchedModels = normalizeAiModelOptions(aiSettings.modelOptions);
         let selectedModel = String(aiSettings.model || '').trim();
         if (fetchedModels.length > 0 && !selectedModel) {
@@ -108,11 +105,7 @@ export function bindAiSettingsEvents() {
         }
         const fragment = document.createDocumentFragment();
         fetchedModels.forEach((modelId) => fragment.appendChild(new Option(modelId, modelId)));
-        if (fetchedModels.length > 0) fragment.appendChild(new Option('手动填写其他模型…', ''));
-        $select.empty().append(fragment);
-        const isFetchedModel = fetchedModels.includes(selectedModel);
-        $select.prop('hidden', fetchedModels.length === 0).val(isFetchedModel ? selectedModel : '');
-        $manual.prop('hidden', fetchedModels.length > 0 && isFetchedModel);
+        $('#blai-ai-model-options').empty().append(fragment);
         if (!$manual.is(':focus')) $manual.val(selectedModel);
     };
     const normalizeAiApiPresetSnapshot = (value = {}) => ({
@@ -265,7 +258,6 @@ export function bindAiSettingsEvents() {
         $('#blai-ai-additional-parameters').attr('aria-invalid', String(Boolean(optionsError)));
         $('#blai-ai-request-options-error').text(optionsError).prop('hidden', !optionsError);
         syncAiApiPresetSelect(aiSettings);
-        syncApiManagerControls();
         syncAiModelControl(aiSettings);
         setValueIfNotFocused('#blai-ai-temperature', aiSettings.temperature);
         setValueIfNotFocused('#blai-ai-top-p', aiSettings.topP);
@@ -290,7 +282,12 @@ export function bindAiSettingsEvents() {
         if (['baseUrl', 'apiKey'].includes(key)) aiSettings.modelOptions = [];
         if (options.markRulesDirty !== false) markRulesDataDirty({ rulesUi: false });
         saveSettingsDebounced();
-        syncAiRewriteSettingsUI();
+        // The manager assigns all fields before dispatching their input events.
+        if (['baseUrl', 'apiKey', 'model', 'excludedParameters', 'additionalParameters'].includes(key)) {
+            queueMicrotask(syncAiRewriteSettingsUI);
+        } else {
+            syncAiRewriteSettingsUI();
+        }
         if (['enabled', 'baseUrl', 'apiKey'].includes(key)) resetAiApiCheckState();
     };
     const openAiPromptEditor = () => {
@@ -431,16 +428,6 @@ export function bindAiSettingsEvents() {
         updateAiRewriteSetting(key, String($(this).val() || ''), { markRulesDirty: false });
     });
 
-    $(document).off('change', '#blai-ai-model').on('change', '#blai-ai-model', function() {
-        const value = String($(this).val() || '').trim();
-        if (!value) {
-            const $manual = $('#blai-ai-model-manual');
-            $manual.prop('hidden', false).val(String(ensureAiRewriteSettings().model || '').trim()).trigger('focus');
-            return;
-        }
-        updateAiRewriteSetting('model', value, { markRulesDirty: false });
-    });
-
     $(document).off('input change', '#blai-ai-model-manual').on('input change', '#blai-ai-model-manual', function() {
         updateAiRewriteSetting('model', String($(this).val() || '').trim(), { markRulesDirty: false });
     });
@@ -548,26 +535,7 @@ export function bindAiSettingsEvents() {
         void runAiModelsHealthCheck();
     });
 
-    syncApiManagerControls = bindApiManagerControls({
-        extensionSettings: extension_settings,
-        getSettings: ensureAiRewriteSettings,
-        applyPresets: (presets) => {
-            const aiSettings = ensureAiRewriteSettings();
-            aiSettings.apiPresets = Object.fromEntries(Object.entries(presets)
-                .map(([name, preset]) => [name, normalizeAiApiPresetSnapshot(preset)]));
-            if (!Object.hasOwn(aiSettings.apiPresets, aiSettings.activeApiPreset)) aiSettings.activeApiPreset = '';
-            saveSettingsDebounced();
-            syncAiRewriteSettingsUI();
-        },
-        applyConnection: (connection) => {
-            const aiSettings = ensureAiRewriteSettings();
-            Object.assign(aiSettings, connection, { modelOptions: [] });
-            ++aiApiCheckSequence; // Ignore a model-list response for the old connection.
-            saveSettingsDebounced();
-            syncAiRewriteSettingsUI();
-            resetAiApiCheckState();
-        },
-    });
+    bindApiManagerControls({ extensionSettings: extension_settings, getSettings: ensureAiRewriteSettings });
 
     if (settings.enableVisualDiff === false) {
         settings.enableVisualDiff = true;
