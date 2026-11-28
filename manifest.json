@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Veridis",
-    "version": "3.5.0-fix.49",
+    "version": "3.5.0-fix.50",
     "description": "在关键词净化基础上增加可选 OpenAI 兼容局部改写。",
-    "update_note": "修复49：修复 TT 非流式生成新 Swipe 后偶尔跳过自动改写的问题。"
+    "update_note": "修复50：兼容 API 管理器填入模型，通过导入按钮保存当前连接到词汇映射分组。"
 }
