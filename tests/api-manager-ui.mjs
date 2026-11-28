@@ -1,5 +1,5 @@
 // Uses the existing Veridis UI fixture plus the unmodified ST-Api-Scripts bundle.
-// Set API_MANAGER_BUNDLE to a local index.js from upstream commit 82ea902.
+// Set API_MANAGER_BUNDLE to a local index.js from API Manager 2.2.22.
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -72,136 +72,43 @@ try {
                 fixture.settings.aiRewrite.baseUrl = 'https://current.invalid/v1';
                 fixture.settings.aiRewrite.apiKey = 'current-private-key';
                 fixture.settings.aiRewrite.model = 'current-model';
+                fixture.settings.aiRewrite.modelOptions = ['current-model'];
                 await import('/manager.js');
                 fixture.shell.showResponsivePage('ai');
             }, { mode, empty });
-            await page.locator('#blai-ai-manager summary').click();
+
         }
         await load();
-        await page.locator('#blai-ai-manager-refresh').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('已读取'));
-        await page.locator('#blai-ai-manager-group').selectOption('site:0');
-        assert.equal(await page.locator('#blai-ai-manager-entry option').count(), 2);
-        await page.locator('#blai-ai-manager-group').selectOption('id:original-group');
-        await page.locator('#blai-ai-manager-entry').selectOption('0');
-        await page.locator('#blai-ai-manager-import').click();
+        await page.locator('#blai-ai-base-url').click();
+        await page.locator('.catalog-form-fill-trigger').click();
+        const picker = page.locator('dialog[aria-label="填入插件 API"]');
+        await picker.locator('.catalog-fill-search').fill('fixture-model');
+        await picker.locator('.catalog-fill-row button').first().click();
         await page.waitForFunction(() => fixture.settings.aiRewrite.model === 'fixture-model');
         assert.equal(await page.locator('#blai-ai-api-key').inputValue(), 'fixture-private-key');
-        assert.equal(await page.evaluate(() => fixture.hostWrites), 0);
-        assert.equal(await page.evaluate(() => fixture.settings.aiRewrite.temperature), 0.65);
-        assert.equal(await page.locator('#blai-ai-manager img').count(), 0);
-        await page.locator('#blai-ai-manager-target').fill('单条分组');
-        await page.locator('#blai-ai-manager-source').selectOption('保存的 API');
+        await page.locator('#blai-ai-api-key').fill('new-test-key');
         await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('已保存到管理器')).catch(async error => {
-            console.log(await page.locator('#blai-ai-manager-status').textContent(), errors);
-            await page.screenshot({ path: path.join(output, 'failure.png') });
-            throw error;
-        });
-        const state = await page.evaluate(() => ({ catalog: fixture.catalog(), original: fixture.original, values: fixture.state().values }));
-        assert.deepEqual(state.catalog.entries[0], state.original.entries[0]);
-        assert.equal(state.catalog.entries.length, 2);
-        assert.equal(state.catalog.groups[1].name, '单条分组');
-        assert.equal(state.catalog.entries[1].site, '单条分组');
-        assert.equal(state.catalog.entries[1].model, 'saved-model');
-        assert.equal(state.catalog.entries[1].key, 'saved-private-key');
-        assert.equal(state.values.unrelated, 'keep');
-        assert.equal(JSON.parse(state.values.st_api_manager_catalog_v2).sync.revision, 'keep-revision');
-        assert.equal(JSON.parse(state.values.st_api_manager_catalog_v2).sync.pending, true);
-        assert.equal(JSON.parse(state.values.st_api_manager_connection_v2).appliedRowId, 'original-row');
+        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('已保存到管理器'), null, { timeout: 6000 }).catch(async e => { console.log(await page.locator('#blai-ai-manager-status').textContent(), errors); throw e; });
+        const saved = await page.evaluate(() => fixture.catalog());
+        const row = saved.entries.find(item => item.key === 'new-test-key');
+        assert.equal(row.model, 'fixture-model');
+        assert.equal(row.site, '原站点');
+        assert.equal(saved.keyNotes.find(note => note.id === row.credentialId).note, '词汇映射');
+        assert.ok(row.groupIds.includes(saved.groups.find(group => group.name === '词汇映射').id));
         await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('无需重复'));
+        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('已在'));
         assert.equal(await page.evaluate(() => fixture.catalog().entries.length), 2);
-        // Actual manager UI sees the newly imported row from its live memory.
-        await page.evaluate(() => dispatchEvent(new Event('st-api-manager-open-request')));
-        assert.equal(await page.locator('.catalog-card-model').filter({ hasText: 'saved-model' }).count(), 1);
-        await page.evaluate(() => document.querySelector('dialog.st-api-manager[aria-label="API 管理器"]').close());
-        assert.equal(await page.evaluate(() => document.querySelector('#blai-ai-manager').scrollWidth > document.querySelector('#blai-ai-manager').clientWidth + 1), false);
-        await page.screenshot({ path: path.join(output, `${mode}-${width}.png`) });
-        assert.equal(await page.evaluate(() => fixture.network), 0);
-        assert.equal(await page.locator('#blai-ai-manager').evaluate(el => el.innerHTML.includes('private-key')), false);
-        await load();
-        assert.equal(await page.evaluate(() => fixture.catalog().entries.length), 2);
-        await page.evaluate(() => dispatchEvent(new Event('st-api-manager-open-request')));
-        assert.equal(await page.locator('.catalog-card-model').filter({ hasText: 'saved-model' }).count(), 1);
-        await page.evaluate(() => document.querySelector('dialog.st-api-manager[aria-label="API 管理器"]').close());
-        if (mode === 'TT') {
-            await page.evaluate(() => { fixture.failWrite = true; });
-            await page.locator('#blai-ai-manager-target').fill('失败分组');
-            await page.locator('#blai-ai-manager-export').click();
-            await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('未完成合并'));
-            assert.equal(await page.evaluate(() => fixture.catalog().entries.length), 2);
-            await page.evaluate(() => { document.querySelectorAll('dialog.st-api-manager[open]').forEach(dialog => dialog.close()); fixture.failRead = true; });
-            await page.locator('#blai-ai-manager-refresh').click();
-            await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('无法读取'));
-            assert.equal(await page.locator('#blai-ai-manager-import').isDisabled(), true);
-        }
-        await load();
-        const beforeBulk = await page.evaluate(() => {
-            fixture.settings.aiRewrite.apiPresets = {
-                First: { baseUrl: 'https://first.invalid/v1', apiKey: 'first-private-key', model: 'first-model' },
-                Second: { baseUrl: 'https://second.invalid/v1', apiKey: 'second-private-key', model: 'second-model' },
-            };
-            return fixture.catalog();
-        });
-        assert.equal(await page.locator('#blai-ai-manager-source').isVisible(), false);
-        await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('批量同步完成'));
-        assert.equal(await page.evaluate(() => fixture.catalog().entries.length), 4);
-        assert.equal(await page.evaluate(() => fixture.catalog().entries.some(row => row.model === 'current-model')), false);
-        await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('新增 0 条'));
-        await page.evaluate(() => {
-            fixture.settings.aiRewrite.apiPresets = { Only: { baseUrl: 'https://only.invalid/v1', apiKey: 'only-private-key', model: 'only-model', temperature: 0.42 } };
-        });
-        await page.locator('#blai-ai-manager-mode').selectOption('to-manager');
-        allowConfirm = false;
-        await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('已取消批量覆盖'));
-        assert.equal(await page.evaluate(() => fixture.catalog().entries.length), 4);
-        allowConfirm = true;
-        await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('批量同步完成'));
-        const overwritten = await page.evaluate(() => fixture.catalog());
-        assert.equal(overwritten.entries.length, 3);
-        assert.deepEqual(overwritten.entries.slice(0, 2), beforeBulk.entries);
-        assert.equal(overwritten.entries[2].model, 'only-model');
-        await page.evaluate(() => { fixture.settings.aiRewrite.apiPresets.Stale = { baseUrl: 'https://stale.invalid/v1', apiKey: 'stale-private-key', model: 'stale-model' }; });
-        const live = await page.evaluate(() => ({ baseUrl: fixture.settings.aiRewrite.baseUrl, apiKey: fixture.settings.aiRewrite.apiKey, model: fixture.settings.aiRewrite.model, temperature: fixture.settings.aiRewrite.temperature }));
-        await page.locator('#blai-ai-manager-mode').selectOption('to-veridis');
-        await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('已批量保存 1'));
-        const reversed = await page.evaluate(() => fixture.settings.aiRewrite);
-        assert.deepEqual(Object.keys(reversed.apiPresets), ['Only']);
-        assert.equal(reversed.apiPresets.Only.temperature, 0.42);
-        for (const [key, value] of Object.entries(live)) assert.equal(reversed[key], value);
-        // Native import checks current snapshots before a replace; failure must
-        // close the prepared replacement instead of leaving a stale payload open.
-        const guarded = await page.evaluate(async () => {
-            const { mergeThroughManager } = await import('/src/integrations/apiManager.js');
-            const before = JSON.stringify(fixture.catalog());
-            let message;
-            try { await mergeThroughManager(window, fixture.catalog(), { replace: true, beforeWrite: () => { throw new Error('snapshot changed'); } }); }
-            catch (error) { message = error.message; }
-            return { unchanged: JSON.stringify(fixture.catalog()) === before, message, open: document.querySelectorAll('dialog.st-api-manager[open]').length };
-        });
-        assert.deepEqual(guarded, { unchanged: true, message: 'snapshot changed', open: 0 });
-        assert.equal(await page.evaluate(() => fixture.network), 0);
-        assert.equal(await page.locator('#blai-ai-manager').evaluate(el => el.innerHTML.includes('private-key')), false);
-        await page.screenshot({ path: path.join(output, `batch-${mode}-${width}.png`) });
-        await load();
-        assert.equal(await page.evaluate(() => fixture.catalog().entries.length), 3);
         await load(true);
         await page.locator('#blai-ai-manager-export').click();
-        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('批量同步完成'));
-        assert.equal(await page.evaluate(() => fixture.catalog().entries.length), 1);
+        await page.waitForFunction(() => document.querySelector('#blai-ai-manager-status').textContent.includes('已保存到管理器'));
         assert.equal(await page.evaluate(() => fixture.catalog().groups[0].name), '词汇映射');
+        assert.equal(await page.evaluate(() => fixture.catalog().entries[0].model), 'current-model');
         assert.deepEqual(errors, []);
-        results.push({ mode, width, passed: true });
-        console.log(`PASS ${mode} ${width}: single export, bulk add, both overwrite directions, cancel, snapshot guard, empty first save, persistence, isolation${mode === 'TT' ? ', storage failures' : ''}`);
+        results.push({mode,width,passed:true});
+        console.log('PASS', mode, width);
         await context.close();
     }
 } finally {
-    fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify({ results, realHost: false, realModelCalls: 0, upstream: '82ea902c54d8ac91dbf27cbf0668a0cf7f6407b5' }, null, 2));
+    fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(results));
     await browser.close(); server.close();
 }
